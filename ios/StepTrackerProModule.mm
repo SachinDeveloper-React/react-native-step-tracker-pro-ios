@@ -2,6 +2,7 @@
 
 #import <React/RCTBridgeModule.h>
 #import <UIKit/UIKit.h>
+#import <atomic>
 
 #if __has_include("react_native_step_tracker_pro_ios/react_native_step_tracker_pro_ios-Swift.h")
 #import "react_native_step_tracker_pro_ios/react_native_step_tracker_pro_ios-Swift.h"
@@ -28,6 +29,9 @@ __attribute__((constructor)) static void StepTrackerProObserveLaunch(void)
 
 @implementation StepTrackerProModule {
   BOOL _listening;
+  // The generated emitOn... methods call an event callback the runtime sets
+  // after init; calling it before then throws. Events wait for it.
+  std::atomic<bool> _canEmit;
 }
 
 RCT_EXPORT_MODULE(StepTrackerPro)
@@ -48,8 +52,15 @@ RCT_EXPORT_MODULE(StepTrackerPro)
   return self;
 }
 
+- (void)setEventEmitterCallback:(EventEmitterCallbackWrapper *)eventEmitterCallbackWrapper
+{
+  [super setEventEmitterCallback:eventEmitterCallbackWrapper];
+  _canEmit = true;
+}
+
 - (void)invalidate
 {
+  _canEmit = false;
   [[StepTrackerProBridge shared] detachEmitter];
 }
 
@@ -61,6 +72,7 @@ RCT_EXPORT_MODULE(StepTrackerPro)
 
 - (void)emit:(NSString *)name payload:(NSDictionary *)payload
 {
+  if (!_canEmit) return;
   // Typed emitters only exist once the runtime has handed the module its
   // event callback; before that there is nobody to hear an event anyway.
   if ([name isEqualToString:@"stepsChanged"]) [self emitOnStepsChanged:payload];

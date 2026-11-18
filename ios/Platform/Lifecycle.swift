@@ -185,19 +185,22 @@ extension Engine {
         let c = clock
         let today = c.today()
         state.lastPedometerAt = max(state.lastPedometerAt, nowMs)
-        // Open days: today, and any recent day not yet final.
-        for offset in stride(from: Engine.pedometerDays - 1, through: 1, by: -1) {
+        // Today first, so the number on screen never waits for history.
+        let record = deviceDay(today)
+        _ = resolveToday(record, mode: .display)
+        emitSteps(force: true)
+        // Then the open days: any recent day not yet final.
+        for offset in 1..<Engine.pedometerDays {
             let date = c.minusDays(today, offset)
             if isGone(date) { continue }
             if let stored = store.day(date), stored.final { continue }
             if countingWindows(date, until: nowMs).isEmpty && store.day(date) == nil { continue }
             _ = deviceDay(date)
         }
-        let record = deviceDay(today)
-        _ = resolveToday(record, mode: .display)
         checkBackfill()
+        // Retention, as Android prunes on its schedule.
+        _ = pruneHistory(Double(config.historyRetentionDays))
         saveState()
-        emitSteps(force: true)
     }
 
     /// `historyBackfilled` when a past day's resolved number grew - a watch
