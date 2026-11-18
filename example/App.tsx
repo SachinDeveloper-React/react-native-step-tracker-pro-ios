@@ -45,7 +45,12 @@ async function post(path: string, body: unknown): Promise<{ ok: boolean } | null
   }
 }
 
-/** Every call the reference consumer makes, once, for the device checklist. */
+/**
+ * The reference consumer's calls, once, for the device checklist - reads
+ * only. Nothing here starts, stops, pauses or resets tracking, sets
+ * countFrom or other devices' steps: run on a phone being tested, those
+ * would change the very count being measured. Use the buttons for them.
+ */
 async function smokeTest(): Promise<string[]> {
   const lines: string[] = [];
   const log = (line: string) => lines.push(line);
@@ -62,8 +67,6 @@ async function smokeTest(): Promise<string[]> {
     ['getTrackingHealth', () => StepTracker.getTrackingHealth()],
     ['getTodaySteps', () => StepTracker.getTodaySteps()],
     ['getStepsForDate', () => StepTracker.getStepsForDate(date)],
-    ['setOtherDevicesSteps', () => StepTracker.setOtherDevicesSteps(date, 0)],
-    ['setCountFrom', () => StepTracker.setCountFrom(null)],
     ['checkPermissions', () => StepTracker.checkPermissions()],
     ['getHealthConnectStatus', () => StepTracker.getHealthConnectStatus()],
     ['getBackgroundRestrictionStatus', () => StepTracker.getBackgroundRestrictionStatus()],
@@ -87,11 +90,6 @@ async function smokeTest(): Promise<string[]> {
     ['writeHealthConnectSteps', () => StepTracker.writeHealthConnectSteps(date)],
     ['revokeHealthConnectPermissions', () => StepTracker.revokeHealthConnectPermissions()],
     ['getSyncStatus', () => StepTracker.getSyncStatus()],
-    ['startTracking', () => StepTracker.startTracking()],
-    ['pauseTracking', () => StepTracker.pauseTracking()],
-    ['resumeTracking', () => StepTracker.resumeTracking()],
-    ['stopTracking', () => StepTracker.stopTracking()],
-    ['resetToday', () => StepTracker.resetToday()],
   ];
   for (const [name, run] of calls) {
     try {

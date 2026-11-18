@@ -155,9 +155,11 @@ final class Engine {
             }
             return stored ?? emptyRecord(date)
         }
-        if let stored { return stored }
-        if dayStart < reach { return healthFallbackDay(date) ?? emptyRecord(date) }
-        return emptyRecord(date)
+        // Past the pedometer's week: what was counted then, unless Apple
+        // Health holds more of the day - a day last computed at 6 pm and
+        // never again must not keep its 6 pm count.
+        if dayStart < reach { return healthFallbackDay(date, stored: stored) ?? emptyRecord(date) }
+        return stored ?? emptyRecord(date)
     }
 
     /// The last full count with a fresh total: the minutes and the gate's
@@ -250,22 +252,35 @@ final class Engine {
         }
     }
 
-    /// The fallback for a day older than the pedometer remembers that was
-    /// never computed: this iPhone's own samples in Apple Health, untagged.
-    func healthFallbackDay(_ date: String) -> DayRecord? {
+    /// A day older than the pedometer remembers, not settled: this iPhone's
+    /// own samples in Apple Health, untagged, when they hold more steps than
+    /// were counted. Never settles on a read that may have been refused -
+    /// Apple Health returns no data for a refused read, not an error - so a
+    /// zero, or a read that failed, leaves the day to be asked again.
+    func healthFallbackDay(_ date: String, stored: DayRecord?) -> DayRecord? {
         let c = clock
         let windows = countingWindows(date, until: nowMs)
         guard !windows.isEmpty else {
+            if let stored { return stored }
             var record = emptyRecord(date)
             record.final = true
             store.saveDay(record)
             return record
         }
-        guard health.available, HealthSource.missingDeclaration == nil,
+        guard health.available, HealthSource.missingDeclaration == nil, grants().steps,
               case let .success(samples) = health.samples(.steps, from: c.startOfDayMs(date), to: c.endOfDayExclusiveMs(date)) else {
-            return nil
+            return stored
         }
         let count = DayCounting.fromHealthMinutes(HealthSources.iPhoneMinutes(samples, windows: windows))
+        if var settled = stored, settled.deviceSteps >= count.deviceSteps {
+            // Apple Health has no more of the day than was counted: it stands.
+            if count.deviceSteps > 0 {
+                settled.final = true
+                store.saveDay(settled)
+            }
+            return settled
+        }
+        guard count.deviceSteps > 0 else { return stored }
         var record = DayRecord(date: date, deviceSteps: count.deviceSteps, gatedSteps: 0, minutes: count.minutes,
                                sensor: "healthkit", computedAt: nowMs, final: true)
         evaluate(&record)
