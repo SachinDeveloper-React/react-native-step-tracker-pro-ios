@@ -1,0 +1,19 @@
+{
+  // Type-checks the codegen spec against the React Native version the
+  // Android package develops against (0.77, also the floor): it declares
+  // 'react-native/Libraries/Types/CodegenTypes', which 0.80+ no longer do.
+  // The spec must stay byte for byte the Android package's, so the tooling
+  // matches it rather than the file changing.
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ESNext"],
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true
+  },
+  "include": ["src", "index.d.ts"]
+}

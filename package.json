@@ -30,6 +30,7 @@
     "test": "npm run test:js && npm run test:swift",
     "test:js": "node --test test/",
     "test:swift": "swift test",
+    "typecheck": "tsc --noEmit",
     "verify-signature": "node scripts/verify-signature.mjs"
   },
   "keywords": [
@@ -52,7 +53,11 @@
     "react-native-step-tracker-pro": ">=2.11.0"
   },
   "devDependencies": {
-    "react-native-step-tracker-pro": "^2.11.0"
+    "@types/react": "^18.2.0",
+    "react": "18.3.1",
+    "react-native": "0.77.0",
+    "react-native-step-tracker-pro": "^2.11.0",
+    "typescript": "^5.4.0"
   },
   "codegenConfig": {
     "name": "RNStepTrackerProIOSSpec",
