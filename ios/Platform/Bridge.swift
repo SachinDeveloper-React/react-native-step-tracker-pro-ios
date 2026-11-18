@@ -14,17 +14,27 @@ public final class StepTrackerProBridge: NSObject {
         Engine.shared.queue.async { Engine.shared.bootIfNeeded() }
     }
 
-    @objc public func attachEmitter(_ emitter: @escaping (String, [String: Any]) -> Void) {
+    /// Events go to the module instance that attached last. On a reload the
+    /// old instance can be invalidated after the new one attached, so only
+    /// the owner may detach.
+    @objc public func attachEmitter(_ owner: AnyObject, emitter: @escaping (String, [String: Any]) -> Void) {
+        let id = ObjectIdentifier(owner)
         engine.queue.async {
             self.engine.bootIfNeeded()
+            self.engine.emitterOwner = id
             self.engine.emitter = { name, payload in
                 if let dict = payload.foundation as? [String: Any] { emitter(name, dict) }
             }
         }
     }
 
-    @objc public func detachEmitter() {
-        engine.queue.async { self.engine.emitter = nil }
+    @objc public func detachEmitter(_ owner: AnyObject) {
+        let id = ObjectIdentifier(owner)
+        engine.queue.async {
+            guard self.engine.emitterOwner == id else { return }
+            self.engine.emitter = nil
+            self.engine.emitterOwner = nil
+        }
     }
 
     @objc public func call(_ method: String, args: [Any], resolve: @escaping (Any?) -> Void,

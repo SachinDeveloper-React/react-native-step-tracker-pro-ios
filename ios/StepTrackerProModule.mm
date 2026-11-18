@@ -45,9 +45,10 @@ RCT_EXPORT_MODULE(StepTrackerPro)
 {
   if (self = [super init]) {
     __weak StepTrackerProModule *weakSelf = self;
-    [[StepTrackerProBridge shared] attachEmitter:^(NSString *name, NSDictionary *payload) {
-      [weakSelf emit:name payload:payload];
-    }];
+    [[StepTrackerProBridge shared] attachEmitter:self
+                                         emitter:^(NSString *name, NSDictionary *payload) {
+                                           [weakSelf emit:name payload:payload];
+                                         }];
   }
   return self;
 }
@@ -61,7 +62,7 @@ RCT_EXPORT_MODULE(StepTrackerPro)
 - (void)invalidate
 {
   _canEmit = false;
-  [[StepTrackerProBridge shared] detachEmitter];
+  [[StepTrackerProBridge shared] detachEmitter:self];
 }
 
 - (std::shared_ptr<facebook::react::TurboModule>)getTurboModule:

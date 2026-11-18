@@ -16,6 +16,9 @@ final class Engine {
     var config = StepTrackerConfig()
     var events: [IntegrityEvent] = []
     var emitter: ((String, JSON) -> Void)?
+    var emitterOwner: ObjectIdentifier?
+    /// Uptime of the last weekly/monthly goal check: once a minute is plenty.
+    var lastPeriodGoalCheck: Int64 = -1_000_000
     private var booted = false
 
     // Caches, in memory only.
@@ -555,8 +558,13 @@ final class Engine {
             emitGoal(reached, date: shown.date)
         }
         let c = clock
+        // Summing the week and the month reads every stored day in them; the
+        // hot path runs every few hundred ms while walking, so at most once a
+        // minute - Android checks only when it commits.
+        let checkPeriods = uptimeMs - lastPeriodGoalCheck >= 60_000
+        if checkPeriods { lastPeriodGoalCheck = uptimeMs }
         for (type, window, goal) in [(GoalRules.weekly, c.calendarWeek(), config.weeklyGoal),
-                                     (GoalRules.monthly, c.calendarMonth(), config.monthlyGoal)] where goal > 0 {
+                                     (GoalRules.monthly, c.calendarMonth(), config.monthlyGoal)] where checkPeriods && goal > 0 {
             if goals.alreadyFired(type, periodKey: window.0) { continue }
             var sum = shown.steps - shown.otherDevicesSteps
             for date in c.range(window.0, window.1) where date < shown.date {
