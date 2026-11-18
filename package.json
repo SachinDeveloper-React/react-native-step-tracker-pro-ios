@@ -1,0 +1,71 @@
+{
+  "name": "react-native-step-tracker-pro-ios",
+  "version": "1.0.0",
+  "description": "The iOS implementation of react-native-step-tracker-pro: CMPedometer, Apple Health sources, a Secure Enclave key with App Attest, and the same signed day snapshot, driven by the same JavaScript.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SachinDeveloper-React/react-native-step-tracker-pro-ios.git"
+  },
+  "homepage": "https://github.com/SachinDeveloper-React/react-native-step-tracker-pro-ios#readme",
+  "bugs": {
+    "url": "https://github.com/SachinDeveloper-React/react-native-step-tracker-pro-ios/issues"
+  },
+  "main": "index.js",
+  "types": "index.d.ts",
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "src/NativeStepTrackerPro.ts",
+    "ios/Core",
+    "ios/Platform",
+    "ios/StepTrackerProModule.h",
+    "ios/StepTrackerProModule.mm",
+    "ios/PrivacyInfo.xcprivacy",
+    "react-native-step-tracker-pro-ios.podspec",
+    "react-native.config.js",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "npm run test:js && npm run test:swift",
+    "test:js": "node --test test/",
+    "test:swift": "swift test",
+    "verify-signature": "node scripts/verify-signature.mjs"
+  },
+  "keywords": [
+    "react-native",
+    "ios",
+    "pedometer",
+    "step-counter",
+    "steps",
+    "healthkit",
+    "apple-health",
+    "core-motion",
+    "app-attest",
+    "turbo-module",
+    "anti-fraud"
+  ],
+  "license": "MIT",
+  "author": "Sachin Kumar",
+  "peerDependencies": {
+    "react-native": ">=0.77.0",
+    "react-native-step-tracker-pro": ">=2.11.0"
+  },
+  "devDependencies": {
+    "react-native-step-tracker-pro": "^2.11.0"
+  },
+  "codegenConfig": {
+    "name": "RNStepTrackerProIOSSpec",
+    "type": "modules",
+    "jsSrcsDir": "src",
+    "ios": {
+      "modulesProvider": {
+        "StepTrackerPro": "StepTrackerProModule"
+      }
+    }
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "sideEffects": false
+}
