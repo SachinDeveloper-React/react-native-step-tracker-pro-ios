@@ -1,6 +1,6 @@
 {
   "name": "react-native-step-tracker-pro-ios",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "The iOS implementation of react-native-step-tracker-pro: CMPedometer, Apple Health sources, a Secure Enclave key with App Attest, and the same signed day snapshot, driven by the same JavaScript.",
   "repository": {
     "type": "git",
@@ -31,7 +31,9 @@
     "test:js": "node --test test/",
     "test:swift": "swift test",
     "typecheck": "tsc --noEmit",
-    "verify-signature": "node scripts/verify-signature.mjs"
+    "verify-signature": "node scripts/verify-signature.mjs",
+    "version": "node scripts/sync-version.mjs && git add ios/Core/LibraryVersion.swift",
+    "prepublishOnly": "node --test test/spec-copy.test.mjs"
   },
   "keywords": [
     "react-native",
