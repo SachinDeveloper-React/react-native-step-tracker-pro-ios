@@ -1315,7 +1315,7 @@ PODS:
     - ReactCommon/turbomodule/core
     - ReactNativeDependencies
     - Yoga
-  - react-native-step-tracker-pro-ios (1.0.2):
+  - react-native-step-tracker-pro-ios (1.1.0):
     - hermes-engine
     - RCTRequired
     - RCTTypeSafety
@@ -2016,7 +2016,7 @@ SPEC CHECKSUMS:
   React-microtasksnativemodule: 269f81deee27a2a9bedb6b2d1088c1ae93de9bd3
   React-mutationobservernativemodule: 877e9f730e0d8175c2e952901b55c170fc3d372f
   react-native-safe-area-context: dbee8606869d976bb8d23ed26e50df198cb5688d
-  react-native-step-tracker-pro-ios: bd98de28388ed2f8930fb7a8b8174e8eb04b34cb
+  react-native-step-tracker-pro-ios: f5996f6d04fdd70392fb9e99fa47b41283179290
   React-NativeModulesApple: adb1dd8361dff80e9f6652fb3fdbf033cfbe2a89
   React-networking: c00b437c4408f0640ba0d4158357133488521eca
   React-oscompat: 3175a287dd7175d1a20fdce5048a4b9e11f4b915
