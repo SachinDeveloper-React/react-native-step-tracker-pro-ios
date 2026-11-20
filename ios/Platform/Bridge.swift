@@ -11,6 +11,10 @@ public final class StepTrackerProBridge: NSObject {
     /// From the module's `+load`, at the end of launch - also a background
     /// launch for Apple Health's delivery, when no JavaScript may run.
     @objc public static func applicationDidFinishLaunching() {
+        // Synchronously, on the main thread, as launch finishes: HealthKit
+        // delivers a background launch's update to the observers that exist
+        // by then. Everything else starts on the engine's queue.
+        Engine.shared.registerObserversAtLaunch()
         Engine.shared.queue.async { Engine.shared.bootIfNeeded() }
     }
 

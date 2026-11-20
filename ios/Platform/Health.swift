@@ -226,11 +226,18 @@ final class HealthSource {
     // ---- background -------------------------------------------------------------------------
 
     private var observers: [HKObserverQuery] = []
+    private let observersLock = NSLock()
 
-    /// Observer queries for the granted types, and hourly background
-    /// delivery - the most often iOS allows for steps.
+    /// Observer queries for [kinds], and hourly background delivery - the
+    /// most often iOS allows for steps. Safe from any thread: at launch it
+    /// runs on the main thread, before the engine has started, because
+    /// HealthKit hands a background launch's update to the observers that
+    /// exist as launch finishes, and stops delivering to an app that misses
+    /// three.
     func observe(_ kinds: [HealthSample.Kind], onChange: @escaping (_ done: @escaping () -> Void) -> Void,
                  onError: @escaping (String) -> Void) {
+        observersLock.lock()
+        defer { observersLock.unlock() }
         guard observers.isEmpty else { return }
         for kind in kinds {
             let type = HealthSource.type(kind)
@@ -246,7 +253,33 @@ final class HealthSource {
         }
     }
 
-    var observing: Bool { !observers.isEmpty }
+    var observing: Bool {
+        observersLock.lock()
+        defer { observersLock.unlock() }
+        return !observers.isEmpty
+    }
+
+    // ---- limited access (iOS 27+) -------------------------------------------------------
+
+    /// The earliest date the user lets this app read [kind] from, when they
+    /// granted only a recent window of history; nil for full access - and
+    /// for a refusal, which HealthKit does not tell apart from it.
+    func earliestReadable(_ kind: HealthSample.Kind) -> Date? {
+        #if compiler(>=6.4)
+        if #available(iOS 27.0, *) {
+            let type = HealthSource.type(kind)
+            let sem = DispatchSemaphore(value: 0)
+            var result: Date?
+            store.getEarliestAuthorizedSampleDate(for: [type]) { dates, _ in
+                result = dates?[type]
+                sem.signal()
+            }
+            _ = sem.wait(timeout: .now() + 5)
+            return result
+        }
+        #endif
+        return nil
+    }
 
     static func isLockedError(_ error: Error?) -> Bool {
         guard let error = error as? HKError else { return false }

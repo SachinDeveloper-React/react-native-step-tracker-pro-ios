@@ -20,8 +20,10 @@ enum Lifecycle {
         on(.NSSystemClockDidChange) { $0.onClockChanged() }
         on(.NSSystemTimeZoneDidChange) { $0.onTimeZoneChanged() }
         on(UIApplication.protectedDataDidBecomeAvailableNotification) { engine in
-            // A locked phone's reads failed; now they can run.
+            // A locked phone's reads failed; now they can run. A launch before
+            // the first unlock could not read the observer settings either.
             engine.sourceCache.removeAll()
+            engine.observeHealthIfGranted()
             engine.recompute(reason: "unlocked")
         }
         on(UIDevice.batteryStateDidChangeNotification) { $0.onBatteryChanged(announce: true) }
@@ -226,31 +228,60 @@ extension Engine {
         state.lastResolvedSteps = state.lastResolvedSteps.filter { $0.key >= keep }
     }
 
+    static let observeKey = "com.steptrackerpro.ios.observeHealth"
+
+    /// From the launch notification, on the main thread, before anything
+    /// else: the observers the last run decided on, registered at once.
+    /// HealthKit calls them for a background delivery as soon as the app
+    /// launches, and stops waking an app that misses three.
+    func registerObserversAtLaunch() {
+        let kinds = (UserDefaults.standard.stringArray(forKey: Engine.observeKey) ?? []).compactMap(HealthSample.Kind.init(rawValue:))
+        guard !kinds.isEmpty, health.available, DeviceInfo.hasInfoKey("NSHealthShareUsageDescription") else { return }
+        startObserving(kinds)
+    }
+
     /// Observer queries and hourly background delivery for the types this
-    /// app reads - registered at every launch, before it finishes, which is
-    /// what Apple Health requires to wake the app.
+    /// app reads, once Apple Health's sheet has been answered - and kept, so
+    /// the next launch registers them before it finishes.
     func observeHealthIfGranted() {
         guard config.healthConnectEnabled, config.healthConnectReadEnabled, health.available,
-              HealthSource.missingDeclaration == nil, !health.observing,
-              health.requestStatus(readKinds) == .unnecessary else { return }
+              HealthSource.missingDeclaration == nil,
+              health.requestStatus(readKinds) == .unnecessary else {
+            if !config.healthConnectEnabled || !config.healthConnectReadEnabled {
+                UserDefaults.standard.removeObject(forKey: Engine.observeKey)
+            }
+            return
+        }
+        UserDefaults.standard.set(readKinds.map(\.rawValue), forKey: Engine.observeKey)
+        guard !health.observing else { return }
         if DeviceInfo.hasEntitlement("com.apple.developer.healthkit.background-delivery") == false {
             emit("error", .object([("code", .string("E_HEALTH_CONNECT_NOT_DECLARED")),
                                    ("message", .string("Background delivery needs the com.apple.developer.healthkit.background-delivery entitlement; Apple Health will only be read while the app runs."))]))
         }
-        health.observe(readKinds, onChange: { [weak self] completion in
+        startObserving(readKinds)
+    }
+
+    private func startObserving(_ kinds: [HealthSample.Kind]) {
+        health.observe(kinds, onChange: { [weak self] completion in
             guard let self else { return completion() }
-            // Called promptly whatever happens: iOS stops waking an app
-            // that does not answer.
-            let once = Once(completion)
-            self.queue.asyncAfter(deadline: .now() + 20) { once.run() }
-            self.queue.async {
-                self.sourceCache.removeAll()
-                self.recompute(reason: "health")
-                once.run()
-            }
+            self.healthChanged(completion)
         }, onError: { [weak self] message in
             self?.queue.async { self?.emit("error", .object([("code", .string("E_HEALTH_CONNECT_UNAVAILABLE")), ("message", .string(message))])) }
         })
+    }
+
+    /// Apple Health saved or deleted steps: recompute and tell JS. The
+    /// completion handler is called within ten seconds whatever happens -
+    /// on its own timer, not behind the work on the engine's queue.
+    func healthChanged(_ completion: @escaping () -> Void) {
+        let once = Once(completion)
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 10) { once.run() }
+        queue.async {
+            self.bootIfNeeded()
+            self.sourceCache.removeAll()
+            self.recompute(reason: "health")
+            once.run()
+        }
     }
 }
 
