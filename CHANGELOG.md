@@ -4,7 +4,10 @@ All notable changes to this project are documented here. The format is based
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.1.0] - 2026-11-18
+## [1.1.1] - 2026-11-20
+
+1.1.0 was not published; this is its first release, with the fixes made
+in review since.
 
 From research into how iOS actually records steps - Apple's documentation
 and what others measured - and how reward apps handle it. The findings, with
@@ -107,7 +110,7 @@ sources, and the decision each led to are in
 ## [1.0.1] - 2026-11-18
 
 The same code as 1.0.0. Its snapshots report `libraryVersion: '1.0.0'`:
-`npm version` moved package.json alone. From 1.1.0 it also writes
+`npm version` moved package.json alone. From 1.1.1 it also writes
 `ios/Core/LibraryVersion.swift`, and `npm publish` refuses a mismatch.
 
 ## [1.0.0] - 2026-11-18
@@ -152,6 +155,6 @@ counts steps on an iPhone. What differs from Android is in
   [docs/SERVER_VERIFICATION_IOS.md](docs/SERVER_VERIFICATION_IOS.md).
 - An example app.
 
-[1.1.0]: https://github.com/SachinDeveloper-React/react-native-step-tracker-pro-ios/releases/tag/v1.1.0
+[1.1.1]: https://github.com/SachinDeveloper-React/react-native-step-tracker-pro-ios/releases/tag/v1.1.1
 [1.0.1]: https://github.com/SachinDeveloper-React/react-native-step-tracker-pro-ios/releases/tag/v1.0.1
 [1.0.0]: https://github.com/SachinDeveloper-React/react-native-step-tracker-pro-ios/releases/tag/v1.0.0
