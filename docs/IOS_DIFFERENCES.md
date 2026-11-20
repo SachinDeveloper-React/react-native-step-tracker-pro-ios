@@ -240,9 +240,14 @@ SHA-256 of the SubjectPublicKeyInfo.
   The observers are registered synchronously on the main thread as launch
   finishes, from the settings the previous run kept: HealthKit hands a
   background launch's update to the observers that exist by then, and stops
-  waking an app that misses three. Wakes are at most hourly, and iOS may not
-  wake an app the user swiped away until it is opened again - tell users not
-  to force-quit it, as Sweatcoin does.
+  waking an app that misses three. The launch and the engine register
+  through one lock, and the engine's types - from the current config and
+  grant - replace the launch's whichever gets there first. Turning Apple
+  Health off in config stops the observers the next time the app launches,
+  calls `initialize()` or comes to the foreground; background delivery
+  itself is left on, in case the app observes those types itself. Wakes are
+  at most hourly, and iOS may not wake an app the user swiped away until it
+  is opened again - tell users not to force-quit it, as Sweatcoin does.
 - Locked: Apple Health cannot be read. Displayed numbers use the sources last
   read, with the read reported as `'failed'`; signed evidence carries no
   sources and `sourcesStatus: 'failed'`. Everything is read again on

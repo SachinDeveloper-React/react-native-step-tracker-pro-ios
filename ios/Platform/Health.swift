@@ -2,7 +2,8 @@ import Foundation
 import HealthKit
 
 /// Apple Health, read only: `stepCount` and `distanceWalkingRunning`, never
-/// energy, never written. Queried synchronously from the engine's queue.
+/// energy, never written. Queried synchronously from the engine's queue;
+/// observers are registered from the main thread too, at launch.
 final class HealthSource {
     enum ReadError: Error {
         case timedOut
@@ -225,38 +226,44 @@ final class HealthSource {
 
     // ---- background -------------------------------------------------------------------------
 
-    private var observers: [HKObserverQuery] = []
-    private let observersLock = NSLock()
+    typealias OnChange = (_ done: @escaping () -> Void) -> Void
 
-    /// Observer queries for [kinds], and hourly background delivery - the
-    /// most often iOS allows for steps. Safe from any thread: at launch it
-    /// runs on the main thread, before the engine has started, because
-    /// HealthKit hands a background launch's update to the observers that
-    /// exist as launch finishes, and stops delivering to an app that misses
-    /// three.
-    func observe(_ kinds: [HealthSample.Kind], onChange: @escaping (_ done: @escaping () -> Void) -> Void,
-                 onError: @escaping (String) -> Void) {
-        observersLock.lock()
-        defer { observersLock.unlock() }
-        guard observers.isEmpty else { return }
-        for kind in kinds {
-            let type = HealthSource.type(kind)
-            let query = HKObserverQuery(sampleType: type, predicate: nil) { _, completion, error in
-                if error != nil { return completion() }
-                onChange(completion)
-            }
-            observers.append(query)
-            store.execute(query)
-            store.enableBackgroundDelivery(for: type, frequency: .hourly) { ok, error in
-                if !ok { onError(error?.localizedDescription ?? "Apple Health background delivery was not enabled") }
-            }
-        }
+    /// Both registrations - the launch's, on the main thread, and the
+    /// engine's, on its queue - go through it: see `ObservedTypes`.
+    private let observed = ObservedTypes<HKObserverQuery>()
+
+    /// At launch, on the main thread, before the engine has started: the
+    /// types the last run observed. HealthKit hands a background launch's
+    /// update to the observers that exist as launch finishes, and stops
+    /// delivering to an app that misses three. Nothing, once the engine has
+    /// set the types itself.
+    func observeAtLaunch(_ kinds: [HealthSample.Kind], onChange: @escaping OnChange, onError: @escaping (String) -> Void) {
+        observed.launch(kinds) { startObserver($0, onChange: onChange, onError: onError) }
     }
 
-    var observing: Bool {
-        observersLock.lock()
-        defer { observersLock.unlock() }
-        return !observers.isEmpty
+    /// From the engine: exactly [kinds] observed - an observer query and
+    /// hourly background delivery, the most often iOS allows for steps, for
+    /// each type without one, and the observers of types no longer wanted
+    /// stopped. Their background delivery is left as it is: the app may
+    /// observe those types itself. Returns the types it started.
+    @discardableResult
+    func observe(_ kinds: [HealthSample.Kind], onChange: @escaping OnChange, onError: @escaping (String) -> Void) -> [HealthSample.Kind] {
+        observed.set(kinds, start: { startObserver($0, onChange: onChange, onError: onError) },
+                     stop: { _, query in store.stop(query) })
+    }
+
+    private func startObserver(_ kind: HealthSample.Kind, onChange: @escaping OnChange,
+                               onError: @escaping (String) -> Void) -> HKObserverQuery {
+        let type = HealthSource.type(kind)
+        let query = HKObserverQuery(sampleType: type, predicate: nil) { _, completion, error in
+            if error != nil { return completion() }
+            onChange(completion)
+        }
+        store.execute(query)
+        store.enableBackgroundDelivery(for: type, frequency: .hourly) { ok, error in
+            if !ok { onError(error?.localizedDescription ?? "Apple Health background delivery was not enabled") }
+        }
+        return query
     }
 
     // ---- limited access (iOS 27+) -------------------------------------------------------

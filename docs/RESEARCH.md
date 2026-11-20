@@ -86,7 +86,9 @@ background-delivery entitlement, and does not work on the Simulator
 - **Registered at launch:** observers are registered synchronously on the
   main thread as launch finishes, from settings the previous run kept.
   Before, they were registered a moment later on the engine's queue, and an
-  early delivery could find none.
+  early delivery could find none. The launch and the engine register
+  through one lock, and the engine's types replace the launch's whichever
+  thread gets there first.
 - **Answered within ten seconds:** the completion handler is called on its
   own timer. Before, the fallback waited behind the work it was meant to
   bound.

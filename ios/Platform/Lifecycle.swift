@@ -233,41 +233,48 @@ extension Engine {
     /// From the launch notification, on the main thread, before anything
     /// else: the observers the last run decided on, registered at once.
     /// HealthKit calls them for a background delivery as soon as the app
-    /// launches, and stops waking an app that misses three.
+    /// launches, and stops waking an app that misses three. Touches no
+    /// engine state: the engine's queue may already be running.
     func registerObserversAtLaunch() {
         let kinds = (UserDefaults.standard.stringArray(forKey: Engine.observeKey) ?? []).compactMap(HealthSample.Kind.init(rawValue:))
         guard !kinds.isEmpty, health.available, DeviceInfo.hasInfoKey("NSHealthShareUsageDescription") else { return }
-        startObserving(kinds)
+        health.observeAtLaunch(kinds, onChange: healthChangeHandler, onError: healthErrorHandler)
     }
 
     /// Observer queries and hourly background delivery for the types this
     /// app reads, once Apple Health's sheet has been answered - and kept, so
-    /// the next launch registers them before it finishes.
+    /// the next launch registers them before it finishes. These types
+    /// replace whatever the launch registered, in one step under the
+    /// observers' lock; with Apple Health turned off, nothing is observed.
     func observeHealthIfGranted() {
-        guard config.healthConnectEnabled, config.healthConnectReadEnabled, health.available,
-              HealthSource.missingDeclaration == nil,
-              health.requestStatus(readKinds) == .unnecessary else {
-            if !config.healthConnectEnabled || !config.healthConnectReadEnabled {
-                UserDefaults.standard.removeObject(forKey: Engine.observeKey)
-            }
+        guard config.healthConnectEnabled, config.healthConnectReadEnabled else {
+            UserDefaults.standard.removeObject(forKey: Engine.observeKey)
+            health.observe([], onChange: healthChangeHandler, onError: healthErrorHandler)
             return
         }
+        guard health.available, HealthSource.missingDeclaration == nil,
+              health.requestStatus(readKinds) == .unnecessary else { return }
         UserDefaults.standard.set(readKinds.map(\.rawValue), forKey: Engine.observeKey)
-        guard !health.observing else { return }
-        if DeviceInfo.hasEntitlement("com.apple.developer.healthkit.background-delivery") == false {
+        let started = health.observe(readKinds, onChange: healthChangeHandler, onError: healthErrorHandler)
+        if !started.isEmpty, DeviceInfo.hasEntitlement("com.apple.developer.healthkit.background-delivery") == false {
             emit("error", .object([("code", .string("E_HEALTH_CONNECT_NOT_DECLARED")),
                                    ("message", .string("Background delivery needs the com.apple.developer.healthkit.background-delivery entitlement; Apple Health will only be read while the app runs."))]))
         }
-        startObserving(readKinds)
     }
 
-    private func startObserving(_ kinds: [HealthSample.Kind]) {
-        health.observe(kinds, onChange: { [weak self] completion in
+    /// What an observer calls when Apple Health saved or deleted samples.
+    private var healthChangeHandler: HealthSource.OnChange {
+        { [weak self] completion in
             guard let self else { return completion() }
             self.healthChanged(completion)
-        }, onError: { [weak self] message in
+        }
+    }
+
+    /// What an observer calls when background delivery was refused.
+    private var healthErrorHandler: (String) -> Void {
+        { [weak self] message in
             self?.queue.async { self?.emit("error", .object([("code", .string("E_HEALTH_CONNECT_UNAVAILABLE")), ("message", .string(message))])) }
-        })
+        }
     }
 
     /// Apple Health saved or deleted steps: recompute and tell JS. The

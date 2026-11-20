@@ -34,7 +34,12 @@ sources, and the decision each led to are in
   background launch's update to the observer queries that exist as launch
   finishes, and stops waking an app that misses three. They were registered
   a moment later on the engine's queue; now synchronously, on the main
-  thread, from the settings the previous run kept.
+  thread, from the settings the previous run kept. The launch and the engine
+  register through one lock, each deciding and acting in one step, and the
+  engine's types - from the current config and grant - replace the launch's,
+  whichever thread gets there first: a type added since the last run is
+  observed, one removed is stopped, and with Apple Health turned off nothing
+  is.
 - **The ten-second answer to a background delivery waited behind the work
   it was meant to bound.** It was scheduled on the same serial queue; it now
   has its own timer.
