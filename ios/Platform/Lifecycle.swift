@@ -74,6 +74,7 @@ extension Engine {
             saveState()
         }
         hourCache.removeAll()
+        saveHourCache()
         lastFull = nil
         checkDay()
         scheduleMidnight()
@@ -105,7 +106,8 @@ extension Engine {
         state.continuity = nil
         sourceCache.removeAll()
         lastFull = nil
-        if today > previous { hourCache = hourCache.filter { _ in false } }
+        // Yesterday's settled hours stay: it is counted again until it settles.
+        if today > previous { hourCache.prune(endingBy: hourCacheFloor) }
         // The day that closed: its count as it stands, kept now - the first
         // computation after it closed (or the next one) makes it final.
         let closed = deviceDay(previous)

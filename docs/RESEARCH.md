@@ -89,6 +89,9 @@ background-delivery entitlement, and does not work on the Simulator
   early delivery could find none. The launch and the engine register
   through one lock, and the engine's types replace the launch's whichever
   thread gets there first.
+- **A wake is cheap:** the pedometer's settled hours are kept on disk, so a
+  wake in a new process asks only for the last two or three hours instead of
+  sixty minute queries for every hour with steps since midnight.
 - **Answered within ten seconds:** the completion handler is called on its
   own timer. Before, the fallback waited behind the work it was meant to
   bound.

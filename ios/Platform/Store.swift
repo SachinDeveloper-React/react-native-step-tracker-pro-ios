@@ -219,6 +219,12 @@ final class Store {
         (try? FileManager.default.removeItem(at: url("days/\(date).json"))) != nil
     }
 
+    // ---- the pedometer's settled hours ------------------------------------------------
+
+    func loadHourCache() -> HourCache? { read("hours.json").flatMap(HourCache.decoded) }
+
+    func saveHourCache(_ cache: HourCache) { write(cache.encoded(), "hours.json") }
+
     // ---- events ----------------------------------------------------------------------
 
     func events() -> [IntegrityEvent] {

@@ -27,13 +27,15 @@ produce a value, it returns a neutral one rather than inventing data.
 prompt's first choice). Each day is queried once per counting window (the
 figure reported), once per clock hour, and once per minute of every hour with
 steps; hours that ended more than two hours ago are cached, so today costs
-about two hours of minute queries per full recomputation. The hour totals are
-fitted to the window total, and each hour's minutes to the hour, so rounding
-between overlapping queries never breaks the sum. **To measure on a device**
-(see [DEVICE_CHECKLIST.md](DEVICE_CHECKLIST.md)): the residual the fit absorbs
-per hour. If it proves large or unstable, the fallback is Apple Health's
-1-minute statistics from this iPhone's own source, which is already
-implemented for days past the pedometer's week.
+about two hours of minute queries per full recomputation. The cache of today
+and yesterday is kept on disk, so a background wake in a new process costs
+the same; a reboot or a clock edit (`kern.boottime` moves) empties it. The
+hour totals are fitted to the window total, and each hour's minutes to the
+hour, so rounding between overlapping queries never breaks the sum. **To
+measure on a device** (see [DEVICE_CHECKLIST.md](DEVICE_CHECKLIST.md)): the
+residual the fit absorbs per hour. If it proves large or unstable, the
+fallback is Apple Health's 1-minute statistics from this iPhone's own source,
+which is already implemented for days past the pedometer's week.
 
 ## The motion gate and tags
 
@@ -260,7 +262,8 @@ SHA-256 of the SubjectPublicKeyInfo.
 Application Support/StepTrackerPro, file protection
 `completeUntilFirstUserAuthentication`, excluded from backups (the signing key
 is device-only, so state restored onto another phone would describe a key it
-does not have). Days are kept for `historyRetentionDays`.
+does not have). Days are kept for `historyRetentionDays`; the pedometer's
+settled hours of today and yesterday in `hours.json`.
 
 ## Config
 

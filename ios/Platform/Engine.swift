@@ -21,8 +21,10 @@ final class Engine {
     var lastPeriodGoalCheck: Int64 = -1_000_000
     private var booted = false
 
+    /// The pedometer's settled hours of today and yesterday, also on disk:
+    /// a wake in a new process does not count the day again minute by minute.
+    var hourCache = HourCache(bootTimeMs: 0)
     // Caches, in memory only.
-    var hourCache: [String: BucketCount] = [:]
     var lastFull: (date: String, at: Int64, record: DayRecord)?
     var sourceCache: [String: (at: Int64, list: [StepSource])] = [:]
     var grantCache: (at: Int64, value: Grants)?
@@ -72,6 +74,7 @@ final class Engine {
         if DeviceInfo.protectedDataAvailable || store.stateExists { defaults.set(true, forKey: Engine.installMarker) }
 
         state = store.loadState() ?? EngineState()
+        hourCache = store.loadHourCache() ?? HourCache(bootTimeMs: DeviceInfo.bootTimeMs)
         if let stored = store.loadConfig() { config = StepTrackerConfig.fromStore(stored) }
         config.remoteSyncHeaders = Attestation.loadHeaders()
         events = store.events()
@@ -185,31 +188,12 @@ final class Engine {
         let windows = countingWindows(date, until: now)
         let totals = motion.steps(windows)
         if totals.contains(where: { $0 == nil }) { return nil }
-        var counts: [WindowCount] = []
-        let settled = now - 2 * DayClock.hourMs
-        for (i, w) in windows.enumerated() {
-            let hourSpans = TrackingSpans.hours(from: w.0, to: w.1, clock: c)
-            var hours = [BucketCount?](repeating: nil, count: hourSpans.count)
-            var needed: [Int] = []
-            for (j, h) in hourSpans.enumerated() {
-                if h.1 <= settled, let cached = hourCache["\(h.0)-\(h.1)"] { hours[j] = cached } else { needed.append(j) }
-            }
-            let hourTotals = motion.steps(needed.map { hourSpans[$0] })
-            if hourTotals.contains(where: { $0 == nil }) { return nil }
-            for (k, j) in needed.enumerated() {
-                let h = hourSpans[j]
-                var bucket = BucketCount(startMs: h.0, endMs: h.1, total: hourTotals[k] ?? 0)
-                if bucket.total > 0 {
-                    let minuteSpans = TrackingSpans.minutes(from: h.0, to: h.1)
-                    let minuteTotals = motion.steps(minuteSpans)
-                    if minuteTotals.contains(where: { $0 == nil }) { return nil }
-                    bucket.minutes = zip(minuteSpans, minuteTotals).map { BucketCount(startMs: $0.0, endMs: $0.1, total: $1 ?? 0) }
-                }
-                if h.1 <= settled { hourCache["\(h.0)-\(h.1)"] = bucket }
-                hours[j] = bucket
-            }
-            counts.append(WindowCount(startMs: w.0, endMs: w.1, total: totals[i] ?? 0, hours: hours.compactMap { $0 }))
-        }
+        // Hours settled before a reboot or a clock edit are not trusted after it.
+        hourCache.check(bootTimeMs: DeviceInfo.bootTimeMs)
+        let counted = hourCache.count(windows: windows, totals: totals.map { $0 ?? 0 }, clock: c, now: now,
+                                      keepAfter: hourCacheFloor, query: { self.motion.steps($0) })
+        saveHourCache()
+        guard let counts = counted else { return nil }
         let count = DayCounting.build(windows: counts, activity: activityFor(date, counts: counts, until: min(dayEnd, now)),
                                       charging: chargingSpans(until: now),
                                       activityTags: config.fraudDetectionEnabled && config.fraudActivityRecognition)
@@ -221,6 +205,18 @@ final class Engine {
         if !isGone(date) { store.saveDay(record) }
         if date == c.today() { lastFull = (date, now, record) }
         return record
+    }
+
+    /// Where the kept hours begin: yesterday, the oldest day still counted
+    /// from the pedometer until it settles.
+    var hourCacheFloor: Int64 { clock.startOfDayMs(clock.minusDays(clock.today(), 1)) }
+
+    /// Writes the settled hours, when they changed.
+    func saveHourCache() {
+        hourCache.prune(endingBy: hourCacheFloor)
+        guard hourCache.unsaved else { return }
+        store.saveHourCache(hourCache)
+        hourCache.markSaved()
     }
 
     /// The motion coprocessor's verdict per minute with steps, when the gate

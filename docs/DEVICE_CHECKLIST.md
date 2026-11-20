@@ -25,3 +25,4 @@ here before a release.
 | 15 | Treadmill | 30+ minutes at a fixed belt speed, `fraudDetection.mode: 'exclude'` | No steps taken out; any `steady_cadence` flag is weak with `minuteData: 'averaged'` | |
 | 16 | Background delivery | Leave the app in the background (do not swipe it away: iOS may not wake an app the user force-quit), walk an hour with Apple Health access | The day updates without opening the app (check `computedAt` / events on the next launch) | |
 | 17 | Limited history (iOS 27) | Allow Apple Health "recent data only" | `historyReadGranted: false`; days before the window are not read | |
+| 18 | A background wake reuses the settled hours | Walk in the morning; stop the app from Xcode (not a swipe); let an hourly Apple Health delivery wake it in the afternoon | `hours.json` (download the container in Xcode) lists the morning's hours; the woken day matches the count on the next launch | |

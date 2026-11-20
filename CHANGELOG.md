@@ -40,6 +40,13 @@ sources, and the decision each led to are in
   whichever thread gets there first: a type added since the last run is
   observed, one removed is stopped, and with Apple Health turned off nothing
   is.
+- **A background wake counted today again, minute by minute.** The
+  pedometer's settled hours were cached in memory only, so a wake in a new
+  process asked again for every hour since midnight - sixty queries for each
+  hour with steps. They are now kept on disk for today and yesterday, for
+  one boot and one setting of the clock, and a wake asks the pedometer only
+  for the hours still moving, the last two or three. Yesterday's hours also
+  survive midnight, while it is still being counted.
 - **The ten-second answer to a background delivery waited behind the work
   it was meant to bound.** It was scheduled on the same serial queue; it now
   has its own timer.
