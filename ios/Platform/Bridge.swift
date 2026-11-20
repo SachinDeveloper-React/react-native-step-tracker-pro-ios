@@ -15,7 +15,7 @@ public final class StepTrackerProBridge: NSObject {
         // delivers a background launch's update to the observers that exist
         // by then. Everything else starts on the engine's queue.
         Engine.shared.registerObserversAtLaunch()
-        Engine.shared.queue.async { Engine.shared.bootIfNeeded() }
+        Engine.shared.queue.async { _ = Engine.shared.bootIfNeeded() }
     }
 
     /// Events go to the module instance that attached last. On a reload the
@@ -45,13 +45,15 @@ public final class StepTrackerProBridge: NSObject {
                            reject: @escaping (String, String, [String: Any]?) -> Void) {
         let arguments = args.map { JSON(foundation: $0) }
         engine.queue.async {
-            self.engine.bootIfNeeded()
-            self.engine.handle(method, arguments) { result in
-                switch result {
-                case let .success(value):
-                    resolve(value.isNull ? nil : value.foundation)
-                case let .failure(error):
-                    reject(error.code, error.message, error.details)
+            // Before the first unlock after a reboot, answered after it.
+            self.engine.afterBoot {
+                self.engine.handle(method, arguments) { result in
+                    switch result {
+                    case let .success(value):
+                        resolve(value.isNull ? nil : value.foundation)
+                    case let .failure(error):
+                        reject(error.code, error.message, error.details)
+                    }
                 }
             }
         }

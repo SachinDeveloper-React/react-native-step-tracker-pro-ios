@@ -66,6 +66,14 @@ sources, and the decision each led to are in
   6 pm, then not opened, and not woken by Apple Health, for over a week -
   kept its 6 pm count for good. It now takes this iPhone's own samples in
   Apple Health when they hold more of the day.
+- **A launch before the first unlock after a reboot could wipe what was
+  kept.** This package's files cannot be read until then. An app iOS started
+  earlier - a VoIP push, a location event - ran on a blank state and saved
+  it over them once the phone was unlocked: tracking state, spans,
+  countFrom, the event log and the key's record lost, and today counted
+  from zero. The engine now starts at the unlock; calls and Apple Health's
+  deliveries made before it wait, and are answered then, in the order
+  asked, on what was kept.
 - **A refused Apple Health read could settle a day at zero for good.** Apple
   Health answers a refused read with no data rather than an error, so a day
   past the pedometer's week was stored as 0 and never asked again, even

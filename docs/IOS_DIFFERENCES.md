@@ -257,6 +257,11 @@ SHA-256 of the SubjectPublicKeyInfo.
   `protectedDataDidBecomeAvailable`. This package's own files are protected
   until the first unlock after a boot, and its Keychain key is usable after
   it, so a locked wake still counts and signs.
+- Before that first unlock - a launch for a VoIP push or a location event -
+  the engine does not start: on a blank state it would save over everything
+  kept. Calls and Apple Health's deliveries wait and are answered after the
+  unlock, in the order asked, on what was kept; Apple Health's completion
+  handler is still called within ten seconds.
 
 ## Storage
 

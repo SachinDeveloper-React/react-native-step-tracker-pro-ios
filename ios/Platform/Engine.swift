@@ -19,7 +19,9 @@ final class Engine {
     var emitterOwner: ObjectIdentifier?
     /// Uptime of the last weekly/monthly goal check: once a minute is plenty.
     var lastPeriodGoalCheck: Int64 = -1_000_000
-    private var booted = false
+    /// What needs the engine started waits here while it cannot start yet.
+    private lazy var gate = StartGate(queue: queue, start: { [unowned self] in self.start() },
+                                      whenReady: Lifecycle.whenUnlocked)
 
     /// The pedometer's settled hours of today and yesterday, also on disk:
     /// a wake in a new process does not count the day again minute by minute.
@@ -58,11 +60,31 @@ final class Engine {
 
     static let installMarker = "com.steptrackerpro.ios.installed"
 
-    /// On the queue, before anything else touches state.
-    func bootIfNeeded() {
-        guard !booted else { return }
-        booted = true
-        store = Store()
+    /// On the queue, before anything else touches state. False while this
+    /// package's files are there but cannot be read - a launch before the
+    /// first unlock after a reboot, for a VoIP push or a location event -
+    /// and the engine then starts at the unlock (`StartGate`).
+    @discardableResult
+    func bootIfNeeded() -> Bool { gate.startIfNeeded() }
+
+    /// Runs [work] on a started engine: at once, or - before the first
+    /// unlock after a reboot - once it has started after it, in the order
+    /// asked.
+    func afterBoot(_ work: @escaping () -> Void) { gate.afterStart(work) }
+
+    /// Reads what was kept and starts. False, with nothing done, while it is
+    /// there but cannot be read: an engine started on a blank state would
+    /// save it over everything kept as soon as the phone unlocked.
+    private func start() -> Bool {
+        if store == nil { store = Store() }
+        let kept: EngineState?
+        do {
+            kept = try store.loadState()
+        } catch {
+            guard DeviceInfo.protectedDataAvailable else { return false }
+            // Unreadable on an unlocked phone: not protection, and not coming back.
+            kept = nil
+        }
         // Keychain items survive an uninstall; this package's files and
         // defaults do not. A missing marker with no state file is a fresh
         // install: what an earlier install left in the Keychain goes. Not
@@ -73,7 +95,7 @@ final class Engine {
         }
         if DeviceInfo.protectedDataAvailable || store.stateExists { defaults.set(true, forKey: Engine.installMarker) }
 
-        state = store.loadState() ?? EngineState()
+        state = kept ?? EngineState()
         hourCache = store.loadHourCache() ?? HourCache(bootTimeMs: DeviceInfo.bootTimeMs)
         if let stored = store.loadConfig() { config = StepTrackerConfig.fromStore(stored) }
         config.remoteSyncHeaders = Attestation.loadHeaders()
@@ -83,6 +105,7 @@ final class Engine {
         if state.lastDate == nil { state.lastDate = clock.today() }
         saveState()
         Lifecycle.install(self)
+        return true
     }
 
     func saveState() { store.saveState(state) }

@@ -192,7 +192,14 @@ final class Store {
 
     // ---- state and config ------------------------------------------------------
 
-    func loadState() -> EngineState? { read("state.json").flatMap { try? decoder.decode(EngineState.self, from: $0) } }
+    /// The state as kept; nil when there is none, or it does not decode.
+    /// Throws when it is there but cannot be read - before the first unlock
+    /// after a reboot.
+    func loadState() throws -> EngineState? {
+        guard stateExists else { return nil }
+        let data = try Data(contentsOf: url("state.json"))
+        return try? decoder.decode(EngineState.self, from: data)
+    }
 
     func saveState(_ state: EngineState) {
         if let data = try? encoder.encode(state) { write(data, "state.json") }

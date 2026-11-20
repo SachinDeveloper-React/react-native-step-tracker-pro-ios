@@ -36,6 +36,26 @@ enum Lifecycle {
         engine.observeHealthIfGranted()
         engine.startLiveIfNeeded()
     }
+
+    /// Calls [ready] once protected data is available - at once, when it
+    /// already is. The first unlock after a reboot is what makes this
+    /// package's files readable.
+    static func whenUnlocked(_ ready: @escaping () -> Void) {
+        // On the main thread, where UIKit posts the notification: observed
+        // before the check, so no unlock goes unseen.
+        DispatchQueue.main.async {
+            let center = NotificationCenter.default
+            var token: NSObjectProtocol?
+            func done() {
+                if let token { center.removeObserver(token) }
+                token = nil
+                ready()
+            }
+            token = center.addObserver(forName: UIApplication.protectedDataDidBecomeAvailableNotification,
+                                       object: nil, queue: nil) { _ in done() }
+            if UIApplication.shared.isProtectedDataAvailable { done() }
+        }
+    }
 }
 
 extension Engine {
@@ -281,31 +301,17 @@ extension Engine {
 
     /// Apple Health saved or deleted steps: recompute and tell JS. The
     /// completion handler is called within ten seconds whatever happens -
-    /// on its own timer, not behind the work on the engine's queue.
+    /// on its own timer, not behind the work on the engine's queue, which
+    /// before the first unlock after a reboot waits for the unlock.
     func healthChanged(_ completion: @escaping () -> Void) {
         let once = Once(completion)
         DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 10) { once.run() }
         queue.async {
-            self.bootIfNeeded()
-            self.sourceCache.removeAll()
-            self.recompute(reason: "health")
-            once.run()
+            self.afterBoot {
+                self.sourceCache.removeAll()
+                self.recompute(reason: "health")
+                once.run()
+            }
         }
-    }
-}
-
-/// Runs a completion handler exactly once.
-final class Once {
-    private var work: (() -> Void)?
-    private let lock = NSLock()
-
-    init(_ work: @escaping () -> Void) { self.work = work }
-
-    func run() {
-        lock.lock()
-        let w = work
-        work = nil
-        lock.unlock()
-        w?()
     }
 }
