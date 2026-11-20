@@ -32,6 +32,8 @@ struct HealthSample: Equatable {
 enum HealthOrigin {
     static let applePrefix = "com.apple.health."
     static let iPhoneName = "This iPhone"
+    /// Another iPhone on the same Apple Account, syncing through iCloud.
+    static let otherPhoneName = "iPhone"
     static let watchName = "Apple Watch"
 
     /// Apple's own built-in sources - this iPhone, an Apple Watch - share the
@@ -104,6 +106,10 @@ enum HealthSources {
         var coverageStartMs: Int64 = 0
         var countFromMs: Int64 = 0
         var distanceRead: Bool = true
+        /// This iPhone's source, when known. Every iPhone writes to Apple
+        /// Health under `com.apple.health.<device>`; only this one is
+        /// "This iPhone".
+        var thisPhone: String? = nil
     }
 
     private struct Acc {
@@ -135,10 +141,12 @@ enum HealthSources {
         return (start, end, s.value * fraction)
     }
 
-    static func appName(_ s: HealthSample) -> String {
+    static func appName(_ s: HealthSample, thisPhone: String? = nil) -> String {
         switch HealthOrigin.appleKind(s) {
         case .watch?: return HealthOrigin.watchName
-        case .phone?: return HealthOrigin.iPhoneName
+        case .phone?:
+            guard let thisPhone else { return HealthOrigin.iPhoneName }
+            return s.bundleId == thisPhone ? HealthOrigin.iPhoneName : HealthOrigin.otherPhoneName
         default:
             if let known = IOSCatalog.wearableBundleIds[s.bundleId] { return known.0 }
             return s.sourceName.isEmpty ? s.bundleId : s.sourceName
@@ -157,7 +165,7 @@ enum HealthSources {
         let floor = max(o.dayStartMs, o.countFromMs)
         for s in samples where s.kind == .steps {
             guard let (start, end, value) = clipped(s, from: floor, to: o.dayEndMs), value > 0 else { continue }
-            var acc = accs[s.bundleId] ?? Acc(bundleId: s.bundleId, name: appName(s), kind: kind(s),
+            var acc = accs[s.bundleId] ?? Acc(bundleId: s.bundleId, name: appName(s, thisPhone: o.thisPhone), kind: kind(s),
                                                isPlatform: HealthOrigin.appleKind(s) != nil)
             // A source's kind is its most telling sample's: a wearable stamp wins.
             let k = kind(s)
@@ -213,7 +221,24 @@ enum HealthSources {
                 isPlatform: a.isPlatform)
         }
         .filter { $0.steps > 0 }
+        .map { source -> StepSource in
+            var s = source
+            let phones = accs.values.filter { $0.isPlatform && $0.kind == .phone }.count
+            if o.thisPhone == nil, phones > 1, s.isPlatform, s.kind == .phone { s.appName = HealthOrigin.otherPhoneName }
+            return s
+        }
         .sorted { $0.steps != $1.steps ? $0.steps > $1.steps : $0.packageName < $1.packageName }
+    }
+
+    /// Which of Apple Health's iPhone sources is this iPhone: the one whose
+    /// day matches the pedometer's own count for the same stretch - within
+    /// 10%, or 50 steps on a quiet day - when exactly one does. Nil when
+    /// none or several do.
+    static func identifyThisPhone(_ sources: [StepSource], pedometerSteps: Int) -> String? {
+        guard pedometerSteps > 0 else { return nil }
+        let tolerance = max(50, pedometerSteps / 10)
+        let matches = sources.filter { $0.isPlatform && $0.kind == .phone && abs($0.steps - pedometerSteps) <= tolerance }
+        return matches.count == 1 ? matches[0].packageName : nil
     }
 
     private static func clippedValue(_ value: Double, _ start: Int64, _ end: Int64, until: Int64) -> Double {
@@ -223,10 +248,24 @@ enum HealthSources {
     }
 
     /// The fallback minutes: this iPhone's own samples, spread over the
-    /// minutes they cover, within the counting windows.
-    static func iPhoneMinutes(_ samples: [HealthSample], windows: [(Int64, Int64)]) -> [Int64: Int] {
+    /// minutes they cover, within the counting windows. Only one iPhone's:
+    /// [thisPhone] when it is known and wrote that day, otherwise the iPhone
+    /// with the most steps in the windows - never two iPhones summed, which
+    /// would count a walk both carried twice.
+    static func iPhoneMinutes(_ samples: [HealthSample], windows: [(Int64, Int64)], thisPhone: String? = nil) -> [Int64: Int] {
+        let phones = samples.filter { $0.kind == .steps && HealthOrigin.isThisIPhone($0) }
+        var byPhone: [String: Double] = [:]
+        for s in phones {
+            for w in windows { byPhone[s.bundleId, default: 0] += clipped(s, from: w.0, to: w.1)?.2 ?? 0 }
+        }
+        let chosen: String?
+        if let thisPhone, byPhone[thisPhone] != nil {
+            chosen = thisPhone
+        } else {
+            chosen = byPhone.max { $0.value != $1.value ? $0.value < $1.value : $0.key > $1.key }?.key
+        }
         var out: [Int64: Int] = [:]
-        for s in samples where s.kind == .steps && HealthOrigin.isThisIPhone(s) {
+        for s in phones where s.bundleId == chosen {
             for w in windows {
                 guard let (start, end, value) = clipped(s, from: w.0, to: w.1) else { continue }
                 let steps = Int(value.rounded())

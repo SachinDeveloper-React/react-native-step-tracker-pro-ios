@@ -48,6 +48,50 @@ struct EngineState: Codable {
     var appAttestObject: String?
     var appAttestClientData: String?
     var appAttestEnvironment: String?
+    /// This iPhone's own source in Apple Health, learned by matching the
+    /// pedometer - see `HealthSources.identifyThisPhone`.
+    var thisPhoneBundle: String?
+
+    init() {}
+
+    /// Every field optional on the way in, so a file an earlier version
+    /// wrote - or a later one, with keys this one does not know - still
+    /// loads. A failed decode would start from nothing: tracking state,
+    /// spans, countFrom and the key's record, gone with an app update.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        func v<T: Decodable>(_ key: CodingKeys, _ fallback: T) -> T { (try? c.decodeIfPresent(T.self, forKey: key)) ?? fallback }
+        trackingState = v(.trackingState, .idle)
+        spans = v(.spans, [])
+        firstStartAt = v(.firstStartAt, 0)
+        countFromAt = v(.countFromAt, 0)
+        resetAt = v(.resetAt, [:])
+        clearedBefore = v(.clearedBefore, nil)
+        otherDevices = v(.otherDevices, [:])
+        preferredStepSource = v(.preferredStepSource, nil)
+        continuity = v(.continuity, nil)
+        goals = v(.goals, [:])
+        lastResolvedSource = v(.lastResolvedSource, nil)
+        lastPedometerAt = v(.lastPedometerAt, 0)
+        chargingSpans = v(.chargingSpans, [])
+        lastDate = v(.lastDate, nil)
+        lastTimeZone = v(.lastTimeZone, nil)
+        lastBootOffsetMs = v(.lastBootOffsetMs, 0)
+        reportedFlags = v(.reportedFlags, [:])
+        lastResolvedSteps = v(.lastResolvedSteps, [:])
+        healthFingerprint = v(.healthFingerprint, nil)
+        healthDenials = v(.healthDenials, 0)
+        healthRequested = v(.healthRequested, false)
+        keyCreatedAt = v(.keyCreatedAt, 0)
+        keyCreatedBy = v(.keyCreatedBy, nil)
+        keyAttested = v(.keyAttested, false)
+        keySecurityLevel = v(.keySecurityLevel, nil)
+        appAttestKeyId = v(.appAttestKeyId, nil)
+        appAttestObject = v(.appAttestObject, nil)
+        appAttestClientData = v(.appAttestClientData, nil)
+        appAttestEnvironment = v(.appAttestEnvironment, nil)
+        thisPhoneBundle = v(.thisPhoneBundle, nil)
+    }
 }
 
 /// One day of this phone's own count, as computed and kept.
@@ -66,6 +110,35 @@ struct DayRecord: Codable {
     var evaluatedAt: Int64 = 0
     /// The day's Apple Health sources as last read, for a locked phone.
     var sourcesJSON: String?
+
+    init(date: String, deviceSteps: Int, gatedSteps: Int, minutes: [MinuteSample], sensor: String,
+         computedAt: Int64, final: Bool) {
+        self.date = date
+        self.deviceSteps = deviceSteps
+        self.gatedSteps = gatedSteps
+        self.minutes = minutes
+        self.sensor = sensor
+        self.computedAt = computedAt
+        self.final = final
+    }
+
+    /// Lenient, like `EngineState`: a stored day that fails to decode is a
+    /// day lost once it is past the pedometer's week.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        func v<T: Decodable>(_ key: CodingKeys, _ fallback: T) -> T { (try? c.decodeIfPresent(T.self, forKey: key)) ?? fallback }
+        date = try c.decode(String.self, forKey: .date)
+        deviceSteps = v(.deviceSteps, 0)
+        gatedSteps = v(.gatedSteps, 0)
+        minutes = v(.minutes, [])
+        sensor = v(.sensor, "pedometer")
+        computedAt = v(.computedAt, 0)
+        final = v(.final, false)
+        flagsJSON = v(.flagsJSON, nil)
+        flaggedSteps = v(.flaggedSteps, 0)
+        evaluatedAt = v(.evaluatedAt, 0)
+        sourcesJSON = v(.sourcesJSON, nil)
+    }
 
     var flags: [IntegrityFlag] {
         guard let text = flagsJSON, let json = JSON.parse(text)?.arrayValue else { return [] }

@@ -334,7 +334,8 @@ extension Engine {
             for date in dates {
                 let options = HealthSources.Options(dayStartMs: c.startOfDayMs(date), dayEndMs: c.endOfDayExclusiveMs(date),
                                                     coverageStartMs: date == today ? coverageStart(date) : 0,
-                                                    countFromMs: state.countFromAt, distanceRead: g.distance)
+                                                    countFromMs: state.countFromAt, distanceRead: g.distance,
+                                                    thisPhone: state.thisPhoneBundle)
                 sourceCache[date] = (nowMs, stampTrust(HealthSources.build(samples, options, clock: c)))
             }
             return HealthRead.read
@@ -364,7 +365,8 @@ extension Engine {
     func aggregateSource(_ id: String, _ name: String, _ steps: Double, _ meters: Double, distanceRead: Bool) -> StepSource {
         let apple = id.hasPrefix(HealthOrigin.applePrefix)
         let kind = learnedKinds[id] ?? (apple ? .unknown : .app)
-        let appName = kind == .watch && apple ? HealthOrigin.watchName : (kind == .phone && apple ? HealthOrigin.iPhoneName : name)
+        let appName = kind == .watch && apple ? HealthOrigin.watchName
+            : (kind == .phone && apple ? (state.thisPhoneBundle == nil || state.thisPhoneBundle == id ? HealthOrigin.iPhoneName : HealthOrigin.otherPhoneName) : name)
         return StepSource(packageName: id, appName: appName, kind: kind, steps: Int(steps.rounded()), distance: meters,
                           calories: 0, lastRecordAt: 0, isSelf: false, hourlySteps: HourlySteps.unknown, activeCalories: 0,
                           distanceSource: !distanceRead ? DistanceSource.notRead : (meters > 0 ? DistanceSource.healthKit : DistanceSource.none),
@@ -561,7 +563,8 @@ extension Engine {
             ("readRequired", .bool(readOn)),
             ("writeRequired", .bool(false)),
             ("backgroundReadGranted", .bool(anyRead)),
-            ("historyReadGranted", .bool(anyRead)),
+            // Full history, unless the user allowed only a recent window (iOS 27+).
+            ("historyReadGranted", .bool(anyRead && g.stepsReadableFrom == nil)),
             ("grantedPermissions", .strings(grantedNames)),
             ("missingPermissions", .strings(missing)),
             ("undeclaredPermissions", .strings(undeclared)),
@@ -783,7 +786,8 @@ extension Engine {
                 let today = c.today()
                 let options = HealthSources.Options(dayStartMs: from, dayEndMs: c.endOfDayExclusiveMs(end),
                                                     coverageStartMs: start == today && end == today ? coverageStart(today) : 0,
-                                                    countFromMs: state.countFromAt, distanceRead: grants().distance)
+                                                    countFromMs: state.countFromAt, distanceRead: grants().distance,
+                                                    thisPhone: state.thisPhoneBundle)
                 list = stampTrust(HealthSources.build(samples, options, clock: c))
             }
         } else {

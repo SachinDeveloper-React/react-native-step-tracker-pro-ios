@@ -41,6 +41,10 @@ final class Engine {
         var requested: Bool
         var steps: Bool
         var distance: Bool
+        /// iOS 27+: the user granted only a recent window of history; steps
+        /// before this instant cannot be read. Nil for full access - which
+        /// HealthKit does not tell apart from a refusal.
+        var stepsReadableFrom: Int64? = nil
     }
 
     var clock: DayClock { DayClock() }
@@ -127,7 +131,6 @@ final class Engine {
         return coverage > start ? coverage : 0
     }
 
-    static let closeGraceMs: Int64 = 10 * 60_000
     static let pedometerDays = 7
 
     func emptyRecord(_ date: String) -> DayRecord {
@@ -211,7 +214,8 @@ final class Engine {
                                       charging: chargingSpans(until: now),
                                       activityTags: config.fraudDetectionEnabled && config.fraudActivityRecognition)
         var record = DayRecord(date: date, deviceSteps: count.deviceSteps, gatedSteps: count.gatedSteps, minutes: count.minutes,
-                               sensor: "pedometer", computedAt: now, final: now >= dayEnd + Engine.closeGraceMs)
+                               sensor: "pedometer", computedAt: now,
+                               final: DayPolicy.isSettled(computedAt: now, dayEndExclusive: dayEnd))
         record.sourcesJSON = previous?.sourcesJSON
         evaluate(&record)
         if !isGone(date) { store.saveDay(record) }
@@ -267,20 +271,24 @@ final class Engine {
             store.saveDay(record)
             return record
         }
-        guard health.available, HealthSource.missingDeclaration == nil, grants().steps,
+        let g = grants()
+        if let limit = g.stepsReadableFrom, limit > c.startOfDayMs(date) { return stored }
+        guard health.available, HealthSource.missingDeclaration == nil, g.steps,
               case let .success(samples) = health.samples(.steps, from: c.startOfDayMs(date), to: c.endOfDayExclusiveMs(date)) else {
             return stored
         }
-        let count = DayCounting.fromHealthMinutes(HealthSources.iPhoneMinutes(samples, windows: windows))
-        if var settled = stored, settled.deviceSteps >= count.deviceSteps {
-            // Apple Health has no more of the day than was counted: it stands.
-            if count.deviceSteps > 0 {
-                settled.final = true
-                store.saveDay(settled)
-            }
+        let count = DayCounting.fromHealthMinutes(HealthSources.iPhoneMinutes(samples, windows: windows, thisPhone: state.thisPhoneBundle))
+        switch DayPolicy.agedDay(counted: stored?.deviceSteps, health: count.deviceSteps) {
+        case .keep:
+            return stored
+        case .settle:
+            guard var settled = stored else { return nil }
+            settled.final = true
+            store.saveDay(settled)
             return settled
+        case .replace:
+            break
         }
-        guard count.deviceSteps > 0 else { return stored }
         var record = DayRecord(date: date, deviceSteps: count.deviceSteps, gatedSteps: 0, minutes: count.minutes,
                                sensor: "healthkit", computedAt: nowMs, final: true)
         evaluate(&record)
@@ -299,7 +307,8 @@ final class Engine {
         }
         let c = clock
         let rules = config.integrityRules()
-        let evaluation = FraudDetector.evaluate(record.minutes, windows: [], rules: rules, clock: c)
+        // iOS history is averaged: the iPhone keeps steps in 6-10 minute records.
+        let evaluation = FraudDetector.evaluate(record.minutes, windows: [], rules: rules, clock: c, resolution: .averaged)
         var flags = evaluation.flags
         if let volume = FraudDetector.dailyVolumeFlag(flaggedSteps: evaluation.flaggedSteps, deviceSteps: record.deviceSteps, rules: rules,
                                                       dayStart: c.startOfDayMs(record.date), dayEnd: c.endOfDayExclusiveMs(record.date)) {
@@ -369,6 +378,11 @@ final class Engine {
             value.requested = true
             let recent = motion.authorized ? motion.recentTotals() : nil
             value.steps = !(health.hasRecentSample(.steps) == false && (recent?.steps ?? 0) > 0)
+            // A limited grant is the one state HealthKit names: steps are readable, from then on.
+            if let limit = health.earliestReadable(.steps) {
+                value.steps = true
+                value.stepsReadableFrom = DayClock.ms(limit)
+            }
             if readKinds.contains(.distance) {
                 value.distance = value.steps && !(health.hasRecentSample(.distance) == false && (recent?.distance ?? 0) > 0)
             }
@@ -422,10 +436,15 @@ final class Engine {
             }
             return ([], status)
         }
-        let options = HealthSources.Options(dayStartMs: start, dayEndMs: c.endOfDayExclusiveMs(date),
+        var options = HealthSources.Options(dayStartMs: start, dayEndMs: c.endOfDayExclusiveMs(date),
                                             coverageStartMs: date == today ? coverageStart(date) : 0,
-                                            countFromMs: state.countFromAt, distanceRead: g.distance)
-        let list = stampTrust(HealthSources.build(samples, options, clock: c))
+                                            countFromMs: state.countFromAt, distanceRead: g.distance,
+                                            thisPhone: state.thisPhoneBundle)
+        var list = stampTrust(HealthSources.build(samples, options, clock: c))
+        if state.thisPhoneBundle == nil, learnThisPhone(list, from: max(start, state.countFromAt), to: end) {
+            options.thisPhone = state.thisPhoneBundle
+            list = stampTrust(HealthSources.build(samples, options, clock: c))
+        }
         for source in list where source.isPlatform { learnedKinds[source.packageName] = source.kind }
         sourceCache[date] = (nowMs, list)
         if !isGone(date), var record = store.day(date) {
@@ -433,6 +452,18 @@ final class Engine {
             store.saveDay(record)
         }
         return (list, HealthRead.read)
+    }
+
+    /// Which of Apple Health's iPhone sources is this one: the one matching
+    /// the pedometer's own count over the same stretch. Learned once, kept.
+    func learnThisPhone(_ list: [StepSource], from: Int64, to: Int64) -> Bool {
+        guard list.contains(where: { $0.isPlatform && $0.kind == .phone }), motion.authorized,
+              to > from, to - from >= DayClock.hourMs, nowMs - from < Int64(Engine.pedometerDays) * 86_400_000,
+              let pedometer = motion.steps(from: from, to: to),
+              let found = HealthSources.identifyThisPhone(list, pedometerSteps: pedometer) else { return false }
+        state.thisPhoneBundle = found
+        saveState()
+        return true
     }
 
     func stampTrust(_ list: [StepSource]) -> [StepSource] {
@@ -479,6 +510,15 @@ final class Engine {
                 deviceCoverageReliable: true, ignoreManualEntries: config.healthConnectIgnoreManualEntries,
                 wearableTrust: WearableTrust.from(config.wearableTrust), wearableAllowlist: Set(config.wearableAllowlist),
                 catalog: IOSCatalog.catalog, measuredDistance: DistanceSource.healthKit)
+            if policy == .auto && preferredSource == nil {
+                resolution = HourMerge.apply(
+                    resolution, device: device,
+                    phoneHours: HourMerge.phoneHours(record.minutes, total: device.steps, clock: clock,
+                                                     currentHour: today ? clock.hour(ofMs: nowMs) : nil),
+                    sources: list, trust: WearableTrust.from(config.wearableTrust),
+                    allowlist: Set(config.wearableAllowlist), catalog: IOSCatalog.catalog,
+                    ignoreManualEntries: config.healthConnectIgnoreManualEntries, metrics: metrics)
+            }
             if policy == .auto && today {
                 if mode != .cachedOnly {
                     let observed = StepContinuity.observe(state.continuity, raw: resolution, date: record.date, now: nowMs)
