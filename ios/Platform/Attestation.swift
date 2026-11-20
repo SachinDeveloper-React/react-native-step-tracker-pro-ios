@@ -6,8 +6,9 @@ import Security
 /// The install's signing key - a P-256 key in the Secure Enclave, or the
 /// Keychain where there is none - and Apple's App Attest, which binds it to
 /// a genuine install of the app the way Android's key attestation does.
+/// Keys are kept in two slots (`KeySlot`), so a new one can wait for App
+/// Attest without the install's key going first.
 enum Attestation {
-    static let keyTag = Data("com.steptrackerpro.ios.signing".utf8)
     static let headersService = "com.steptrackerpro.ios.headers"
 
     struct Key {
@@ -18,10 +19,15 @@ enum Attestation {
 
     // ---- the signing key ---------------------------------------------------------------------
 
-    static func currentKey() -> Key? {
+    /// Each slot's Keychain tag; `a` is the tag every earlier version used.
+    static func tag(_ slot: KeySlot) -> Data {
+        Data((slot == .a ? "com.steptrackerpro.ios.signing" : "com.steptrackerpro.ios.signing.b").utf8)
+    }
+
+    static func key(in slot: KeySlot) -> Key? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassKey,
-            kSecAttrApplicationTag as String: keyTag,
+            kSecAttrApplicationTag as String: tag(slot),
             kSecAttrKeyType as String: kSecAttrKeyTypeECSECPrimeRandom,
             kSecReturnRef as String: true,
         ]
@@ -39,27 +45,33 @@ enum Attestation {
         return KeyEncoding.spki(x963: point)
     }
 
-    static func deleteKeys() {
+    static func deleteKey(in slot: KeySlot) {
         SecItemDelete([
             kSecClass as String: kSecClassKey,
-            kSecAttrApplicationTag as String: keyTag,
+            kSecAttrApplicationTag as String: tag(slot),
         ] as CFDictionary)
     }
 
-    /// A new key: permanent, usable after the first unlock so a background
-    /// wake on a locked phone can sign, never asking for the user's presence.
-    /// In the Secure Enclave when the phone has one.
-    static func createKey() throws -> (Key, String) {
-        deleteKeys()
-        if SecureEnclave.isAvailable, let key = try? makeKey(enclave: true) { return (key, "secure_enclave") }
-        return (try makeKey(enclave: false), "software")
+    static func deleteKeys() {
+        deleteKey(in: .a)
+        deleteKey(in: .b)
     }
 
-    private static func makeKey(enclave: Bool) throws -> Key {
+    /// A new key in [slot], replacing whatever was there, and nothing in the
+    /// other slot: permanent, usable after the first unlock so a background
+    /// wake on a locked phone can sign, never asking for the user's presence.
+    /// In the Secure Enclave when the phone has one.
+    static func createKey(in slot: KeySlot) throws -> (Key, String) {
+        deleteKey(in: slot)
+        if SecureEnclave.isAvailable, let key = try? makeKey(enclave: true, tag: tag(slot)) { return (key, "secure_enclave") }
+        return (try makeKey(enclave: false, tag: tag(slot)), "software")
+    }
+
+    private static func makeKey(enclave: Bool, tag: Data) throws -> Key {
         var error: Unmanaged<CFError>?
         var privateAttrs: [String: Any] = [
             kSecAttrIsPermanent as String: true,
-            kSecAttrApplicationTag as String: keyTag,
+            kSecAttrApplicationTag as String: tag,
         ]
         var attrs: [String: Any] = [
             kSecAttrKeyType as String: kSecAttrKeyTypeECSECPrimeRandom,
@@ -170,4 +182,10 @@ enum Attestation {
         deleteKeys()
         SecItemDelete([kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: headersService] as CFDictionary)
     }
+}
+
+/// The two signing-key slots, as `KeyRotation` sees them.
+struct KeychainSlots: KeySlots {
+    func keyId(in slot: KeySlot) -> String? { Attestation.key(in: slot)?.keyId }
+    func delete(_ slot: KeySlot) { Attestation.deleteKey(in: slot) }
 }

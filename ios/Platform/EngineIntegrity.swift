@@ -75,12 +75,20 @@ extension Engine {
         return result("read", records, truncated)
     }
 
+    /// The slot the install's key is in.
+    var keySlot: KeySlot { state.keySlot ?? .a }
+
+    /// The install's key: the one its record describes, never a key an
+    /// `attestDevice()` call is still waiting on Apple for.
+    func signingKey() -> Attestation.Key? { Attestation.key(in: keySlot) }
+
     /// Signs with the install's key, making an unattested one on first use -
     /// which, as on Android 2.3+, does not count as attested.
     func signPayload(_ bytes: Data) throws -> JSON {
-        var key = Attestation.currentKey()
+        var key = signingKey()
         if key == nil {
-            let (made, level) = try Attestation.createKey()
+            // In the install's slot: the other may hold a key an attestDevice() is waiting on.
+            let (made, level) = try Attestation.createKey(in: keySlot)
             key = made
             state.keyCreatedAt = nowMs
             state.keyCreatedBy = "sign"
@@ -99,7 +107,7 @@ extension Engine {
     // ---- attestation ----------------------------------------------------------------------------------
 
     func describeKey() -> JSON? {
-        guard let key = Attestation.currentKey() else { return nil }
+        guard let key = signingKey() else { return nil }
         var appAttest: JSON = .null
         if let id = state.appAttestKeyId, let object = state.appAttestObject, let clientData = state.appAttestClientData {
             appAttest = .object([("keyId", .string(id)), ("attestationObject", .string(object)), ("clientData", .string(clientData)),
@@ -120,22 +128,43 @@ extension Engine {
 
     /// A new key bound to the server's challenge: a Secure Enclave key whose
     /// id App Attest vouches for, through `clientData = challenge|keyId`.
+    ///
+    /// It is made in the slot the install's key is not in, and replaces that
+    /// key only once attested (`KeyRotation`). Until then snapshots are
+    /// signed, and `requestIntegrityToken()` answered, with the install's key
+    /// as before; a call that fails - Apple's service down, the app killed
+    /// while waiting - leaves the install as it was.
     func attestDevice(_ challenge: String, _ done: @escaping Done) throws {
         let bytes = Data(challenge.utf8)
         guard !bytes.isEmpty, bytes.count <= 128 else { throw BridgeError.invalid("challenge must be 1-128 bytes of UTF-8") }
-        let (key, level) = try Attestation.createKey()
+        let slot = keySlot.other
+        let (key, level) = try Attestation.createKey(in: slot)
+        let rotation = KeyRotation(slot: slot, keyId: key.keyId)
         func finish(attested: Bool, appAttest: (String, Data, String)?) {
-            state.keyCreatedAt = nowMs
-            state.keyCreatedBy = "attestDevice"
-            state.keyAttested = attested
-            state.keySecurityLevel = attested ? "secure_enclave" : level
-            state.appAttestKeyId = appAttest?.0
-            state.appAttestObject = appAttest?.1.base64EncodedString()
-            state.appAttestClientData = appAttest?.2
-            state.appAttestEnvironment = appAttest == nil ? nil : DeviceInfo.appAttestEnvironment
-            saveState()
+            let promoted = rotation.promote(KeychainSlots()) {
+                state.keySlot = slot
+                state.keyCreatedAt = nowMs
+                state.keyCreatedBy = "attestDevice"
+                state.keyAttested = attested
+                state.keySecurityLevel = attested ? "secure_enclave" : level
+                state.appAttestKeyId = appAttest?.0
+                state.appAttestObject = appAttest?.1.base64EncodedString()
+                state.appAttestClientData = appAttest?.2
+                state.appAttestEnvironment = appAttest == nil ? nil : DeviceInfo.appAttestEnvironment
+                saveState()
+            }
+            guard promoted else { return done(.failure(Engine.attestSuperseded)) }
             log(IntegrityEvent.deviceAttested, .object([("keyId", .string(key.keyId)), ("attested", .bool(attested))]))
             done(.success(describeKey() ?? .null))
+        }
+        // An unsupported feature falls back to an unattested key; anything
+        // else rejects - a server outage especially, which must not downgrade
+        // an install that could be attested a moment later - and takes only
+        // the new key with it.
+        func fail(_ error: Error, while doing: String) {
+            if Attestation.describe(error).code == .featureUnsupported { return finish(attested: false, appAttest: nil) }
+            rotation.discard(KeychainSlots())
+            done(.failure(Attestation.failure(error, while: doing)))
         }
         guard level == "secure_enclave", Attestation.appAttestSupported else {
             // A simulator, or a device App Attest does not support: Android's
@@ -148,14 +177,13 @@ extension Engine {
                 guard let self else { return }
                 switch generated {
                 case let .failure(error):
-                    self.attestFailed(error, while: "making a key", fallback: { finish(attested: false, appAttest: nil) }, done)
+                    fail(error, while: "making a key")
                 case let .success(appKey):
                     Attestation.attest(appKey, clientData: Data(clientData.utf8)) { attested in
                         self.queue.async {
                             switch attested {
                             case let .success(object): finish(attested: true, appAttest: (appKey, object, clientData))
-                            case let .failure(error):
-                                self.attestFailed(error, while: "attesting the key", fallback: { finish(attested: false, appAttest: nil) }, done)
+                            case let .failure(error): fail(error, while: "attesting the key")
                             }
                         }
                     }
@@ -164,16 +192,12 @@ extension Engine {
         }
     }
 
-    /// An unsupported feature falls back to an unattested key; anything else
-    /// rejects - a server outage especially, which must not downgrade an
-    /// install that could be attested a moment later.
-    private func attestFailed(_ error: Error, while doing: String, fallback: () -> Void, _ done: Done) {
-        if Attestation.describe(error).code == .featureUnsupported { return fallback() }
-        Attestation.deleteKeys()
-        state.keyCreatedBy = nil
-        state.appAttestKeyId = nil
-        saveState()
-        done(.failure(Attestation.failure(error, while: doing)))
+    /// A later `attestDevice()` made its key in this call's slot before App
+    /// Attest answered this one: the later call's result is the one that stands.
+    static var attestSuperseded: BridgeError {
+        BridgeError(code: "E_INTEGRITY_FAILED",
+                    message: "A later attestDevice() call replaced this one's key before App Attest answered; that call's result stands",
+                    details: ["playErrorCode": NSNull(), "playError": NSNull(), "retryable": false])
     }
 
     /// An App Attest assertion over SHA-256 of [requestHash] - iOS's answer

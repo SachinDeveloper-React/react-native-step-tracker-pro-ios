@@ -97,7 +97,10 @@ it is worth exactly as you do for an unattested Android key.
 **A failed `attestDevice()`** with `E_INTEGRITY_FAILED` and
 `details.playError: 'APP_ATTEST_SERVER_UNAVAILABLE'` (`retryable: true`) is
 Apple's service being unreachable: ask the app to try again later rather than
-accepting an unattested key from a device that can attest.
+accepting an unattested key from a device that can attest. A failed call
+changes nothing on the install: the new key replaces the old one only once
+App Attest has vouched for it, so snapshots stay signed with the key you have
+on file and `requestIntegrityToken()` keeps answering with its App Attest key.
 
 ## 2. Each snapshot
 

@@ -176,7 +176,8 @@ request and on every foreground.
 | `attestDevice()` | Key attestation chain | App Attest over `SHA256(challenge + "\|" + keyId)`; `certificateChain: []`; `appAttest: { keyId, attestationObject, clientData, environment }` |
 | `securityLevel` | `strongbox`, `tee`, `software` | `'secure_enclave'`, `'software'` |
 | Unattested fallback | Device refuses attestation | App Attest unsupported (simulator, some devices) or `featureUnsupported`: `attested: false`, `appAttest: null` |
-| Transient failure | - | `DCError.serverUnavailable` rejects `E_INTEGRITY_FAILED` with `retryable: true`, never downgrades |
+| Transient failure | - | `DCError.serverUnavailable` rejects `E_INTEGRITY_FAILED` with `retryable: true`, never downgrades, and leaves the install's key in place: the new key waits in a second Keychain slot and replaces it only once attested, so after any failure snapshots are signed, and `requestIntegrityToken()` answered, as before the call |
+| Two calls at once | - | The later call's key stands; the earlier call rejects `E_INTEGRITY_FAILED` with `retryable: false` |
 | `requestIntegrityToken()` | Play Integrity token; needs `cloudProjectNumber` | App Attest assertion over `SHA256(UTF8(requestHash))`, `provider: 'app_attest'`; `cloudProjectNumber` ignored; `E_INTEGRITY_UNAVAILABLE` before an App Attest key exists |
 | Error details | Play's code and name | `playErrorCode: null`, `playError: 'APP_ATTEST_<CASE>'` (`SERVER_UNAVAILABLE` retryable; `INVALID_KEY` - attest again; `INVALID_INPUT`, `FEATURE_UNSUPPORTED`, `UNKNOWN_SYSTEM_FAILURE`) |
 | `prepareIntegrity()` | Warms Play up | Resolves at once |

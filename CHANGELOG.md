@@ -47,6 +47,15 @@ sources, and the decision each led to are in
   one boot and one setting of the clock, and a wake asks the pedometer only
   for the hours still moving, the last two or three. Yesterday's hours also
   survive midnight, while it is still being counted.
+- **A failed `attestDevice()` took the working key with it.** The install's
+  key was deleted before App Attest answered, and a failure then deleted the
+  new key too: with Apple's service down, an attested install was left with
+  no key, no App Attest key and `hasAttestationKey()` false. The new key now
+  waits in a second Keychain slot and replaces the install's key only once
+  attested. Until then, and after any failure, snapshots are signed with the
+  install's key and `requestIntegrityToken()` answers with its App Attest
+  key, as before the call. A call overtaken by a later one rejects with
+  `E_INTEGRITY_FAILED` (`retryable: false`); the later one stands.
 - **The ten-second answer to a background delivery waited behind the work
   it was meant to bound.** It was scheduled on the same serial queue; it now
   has its own timer.

@@ -47,7 +47,7 @@ extension Engine {
                 ok(.object([("events", .array(events(from: clock.startOfDayMs(s), to: clock.endOfDayMs(e)).map { $0.json() }))]))
             case "getStepMinutes": ok(.object([("minutes", .array(stepMinutes(try date(str(0)), try date(str(1))).map { $0.json() }))]))
             case "attestDevice": try attestDevice(str(0), done)
-            case "hasAttestationKey": ok(.bool(Attestation.currentKey() != nil && state.keyCreatedBy == "attestDevice"))
+            case "hasAttestationKey": ok(.bool(signingKey() != nil && state.keyCreatedBy == "attestDevice"))
             case "getAttestationKeyInfo": ok(describeKey() ?? .null)
             case "requestIntegrityToken": try requestIntegrityToken(obj(0), done)
             case "prepareIntegrity": ok(.bool(true))

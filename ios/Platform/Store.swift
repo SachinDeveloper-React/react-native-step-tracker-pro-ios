@@ -40,6 +40,9 @@ struct EngineState: Codable {
     var healthDenials = 0
     var healthRequested = false
     // The signing key's record; the key itself is in the Keychain.
+    /// The Keychain slot the install's key is in; nil is `a`, where every
+    /// key made before there were two slots is.
+    var keySlot: KeySlot?
     var keyCreatedAt: Int64 = 0
     var keyCreatedBy: String?
     var keyAttested = false
@@ -82,6 +85,7 @@ struct EngineState: Codable {
         healthFingerprint = v(.healthFingerprint, nil)
         healthDenials = v(.healthDenials, 0)
         healthRequested = v(.healthRequested, false)
+        keySlot = v(.keySlot, nil)
         keyCreatedAt = v(.keyCreatedAt, 0)
         keyCreatedBy = v(.keyCreatedBy, nil)
         keyAttested = v(.keyAttested, false)
