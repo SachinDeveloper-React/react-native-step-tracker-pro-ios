@@ -382,9 +382,7 @@ final class Engine {
 
     // ---- Apple Health ---------------------------------------------------------------------------
 
-    var readKinds: [HealthSample.Kind] {
-        config.healthConnectReadTypes.contains("distance") ? [.steps, .distance] : [.steps]
-    }
+    var readKinds: [HealthSample.Kind] { config.healthReadKinds }
 
     /// What Apple Health lets this app read. HealthKit never says whether a
     /// read was refused, so: the sheet must have been answered; then a

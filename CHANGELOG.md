@@ -39,7 +39,8 @@ sources, and the decision each led to are in
   engine's types - from the current config and grant - replace the launch's,
   whichever thread gets there first: a type added since the last run is
   observed, one removed is stopped, and with Apple Health turned off nothing
-  is.
+  is - from `updateConfig()` too, at once, where before a change waited for
+  the next launch or foreground.
 - **A background wake counted today again, minute by minute.** The
   pedometer's settled hours were cached in memory only, so a wake in a new
   process asked again for every hour since midnight - sixty queries for each

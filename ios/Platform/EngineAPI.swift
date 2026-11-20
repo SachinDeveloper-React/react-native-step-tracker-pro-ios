@@ -149,7 +149,11 @@ extension Engine {
     }
 
     func updateConfig(_ patch: JSON) throws -> JSON {
+        let previous = config
         applyConfig(config.merging(patch))
+        // Apple Health turned on or off, or other types read: the observers
+        // follow now, not at the next launch or foreground.
+        if config.observedHealthKinds != previous.observedHealthKinds { observeHealthIfGranted() }
         return config.jsObject()
     }
 

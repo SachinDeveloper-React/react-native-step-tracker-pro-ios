@@ -248,6 +248,18 @@ struct StepTrackerConfig: Equatable {
         return keys
     }
 
+    /// The Apple Health types read on iOS: steps, and distance when asked
+    /// for. Calories never are.
+    var healthReadKinds: [HealthSample.Kind] {
+        healthConnectReadTypes.contains("distance") ? [.steps, .distance] : [.steps]
+    }
+
+    /// The types an observer query is wanted for: those read, and none with
+    /// Apple Health or its reads turned off.
+    var observedHealthKinds: [HealthSample.Kind] {
+        healthConnectEnabled && healthConnectReadEnabled ? healthReadKinds : []
+    }
+
     // ---- shapes ------------------------------------------------------------------
 
     /// What `getConfig()` and `updateConfig()` resolve with: Android's `configToMap`.

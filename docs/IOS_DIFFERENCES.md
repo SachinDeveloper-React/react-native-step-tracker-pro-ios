@@ -246,10 +246,10 @@ SHA-256 of the SubjectPublicKeyInfo.
   background launch's update to the observers that exist by then, and stops
   waking an app that misses three. The launch and the engine register
   through one lock, and the engine's types - from the current config and
-  grant - replace the launch's whichever gets there first. Turning Apple
-  Health off in config stops the observers the next time the app launches,
-  calls `initialize()` or comes to the foreground; background delivery
-  itself is left on, in case the app observes those types itself. Wakes are
+  grant - replace the launch's whichever gets there first. `initialize()`
+  and `updateConfig()` apply a change to them at once: turning Apple Health
+  off stops them, and changing the types read adds or stops one. Background
+  delivery itself is left on, in case the app observes those types. Wakes are
   at most hourly, and iOS may not wake an app the user swiped away until it
   is opened again - tell users not to force-quit it, as Sweatcoin does.
 - Locked: Apple Health cannot be read. Displayed numbers use the sources last

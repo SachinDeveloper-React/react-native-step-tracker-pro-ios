@@ -288,6 +288,21 @@ final class ConfigTests: XCTestCase {
         XCTAssertEqual(patched.weightKg, 70)
     }
 
+    /// What `updateConfig()` re-registers Apple Health's observers for.
+    func testTheObservedHealthTypesFollowOnlyWhatChangesThem() {
+        let base = StepTrackerConfig().sanitised()
+        XCTAssertEqual(base.observedHealthKinds, [.steps, .distance])
+        func patched(_ pairs: [(String, JSON)]) -> [HealthSample.Kind] {
+            base.merging(.object(pairs)).sanitised().observedHealthKinds
+        }
+        XCTAssertEqual(patched([("healthConnectReadTypes", .strings(["steps"]))]), [.steps])
+        XCTAssertEqual(patched([("healthConnectEnabled", .bool(false))]), [])
+        XCTAssertEqual(patched([("healthConnectReadEnabled", .bool(false))]), [])
+        // Calories are read on Android only; a goal has nothing to do with it.
+        XCTAssertEqual(patched([("healthConnectReadTypes", .strings(["steps", "distance"])), ("dailyGoal", .int(5_000))]),
+                       base.observedHealthKinds)
+    }
+
     func testClampingFollowsAndroid() {
         let c = StepTrackerConfig().merging(.object([
             ("height", .int(10)), ("fraudDetection", .object([("maxCadenceSpm", .int(50)), ("maxDailySteps", .int(0))])),
