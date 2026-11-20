@@ -74,6 +74,11 @@ sources, and the decision each led to are in
   from zero. The engine now starts at the unlock; calls and Apple Health's
   deliveries made before it wait, and are answered then, in the order
   asked, on what was kept.
+- **`clock_changed` was logged for the phone sleeping.** A clock edit was
+  measured as wall clock minus uptime, and iOS's uptime stops while the
+  phone sleeps: a time change after hours asleep read as a jump of hours,
+  for honest users. It is now measured by `kern.boottime`, which moves with
+  the clock alone, so `jumpMs` is how far the clock was set.
 - **A refused Apple Health read could settle a day at zero for good.** Apple
   Health answers a refused read with no data rather than an error, so a day
   past the pedometer's week was stored as 0 and never asked again, even

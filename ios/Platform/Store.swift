@@ -32,8 +32,6 @@ struct EngineState: Codable {
     var chargingSpans: [[Int64]] = []
     var lastDate: String?
     var lastTimeZone: String?
-    /// Wall clock minus uptime at the last look, to measure a clock edit.
-    var lastBootOffsetMs: Int64 = 0
     var reportedFlags: [String: [String]] = [:]
     var lastResolvedSteps: [String: Int] = [:]
     var healthFingerprint: String?
@@ -79,7 +77,6 @@ struct EngineState: Codable {
         chargingSpans = v(.chargingSpans, [])
         lastDate = v(.lastDate, nil)
         lastTimeZone = v(.lastTimeZone, nil)
-        lastBootOffsetMs = v(.lastBootOffsetMs, 0)
         reportedFlags = v(.reportedFlags, [:])
         lastResolvedSteps = v(.lastResolvedSteps, [:])
         healthFingerprint = v(.healthFingerprint, nil)

@@ -37,6 +37,8 @@ final class Engine {
     var lastEventUptime: Int64 = -1_000_000
     var trailingQueued = false
     var liveDate: String?
+    /// `kern.boottime` at the last look, this run: a clock edit moves it.
+    var clockBaselineMs: Int64 = 0
     var midnightTimer: DispatchSourceTimer?
     var lastStatusFingerprint: String?
 
@@ -100,7 +102,6 @@ final class Engine {
         if let stored = store.loadConfig() { config = StepTrackerConfig.fromStore(stored) }
         config.remoteSyncHeaders = Attestation.loadHeaders()
         events = store.events()
-        if state.lastBootOffsetMs == 0 { state.lastBootOffsetMs = DeviceInfo.bootOffsetMs }
         if state.lastTimeZone == nil { state.lastTimeZone = TimeZone.current.identifier }
         if state.lastDate == nil { state.lastDate = clock.today() }
         saveState()

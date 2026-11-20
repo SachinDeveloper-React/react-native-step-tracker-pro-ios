@@ -22,10 +22,11 @@
 			</array>
 		</dict>
 		<dict>
-			<!-- sysctl kern.boottime for the snapshot's clock.bootId, and the system
-			     uptime for event throttling: elapsed time between events in the app,
-			     so a wall-clock edit between two snapshots shows. Never sent anywhere
-			     on its own, and not used to identify the device. -->
+			<!-- sysctl kern.boottime for the snapshot's clock.bootId, to tell a
+			     wall-clock edit (it moves kern.boottime) while the app runs, and to
+			     keep cached pedometer hours to one boot; the system uptime for event
+			     throttling: elapsed time between events in the app. Never sent
+			     anywhere on its own, and not used to identify the device. -->
 			<key>NSPrivacyAccessedAPIType</key>
 			<string>NSPrivacyAccessedAPICategorySystemBootTime</string>
 			<key>NSPrivacyAccessedAPITypeReasons</key>

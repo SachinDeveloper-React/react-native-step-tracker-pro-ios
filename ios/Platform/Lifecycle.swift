@@ -67,21 +67,22 @@ extension Engine {
             log(IntegrityEvent.timezoneChanged, .object([("from", .string(previous)), ("to", .string(zone))]))
             state.lastTimeZone = zone
         }
-        let offset = DeviceInfo.bootOffsetMs
-        // Across a reboot the offset moves by however long the phone was
-        // off; only a jump within one boot is a clock edit.
-        let boot = DeviceInfo.bootTimeMs
-        if abs(offset - boot) < 60_000 { state.lastBootOffsetMs = offset }
+        // Clock edits are measured within one run: across a reboot the boot
+        // time moves as well.
+        clockBaselineMs = DeviceInfo.bootTimeMs
         saveState()
         checkDay()
     }
 
+    /// `clock_changed` with how far the clock was set. Measured by
+    /// `kern.boottime`, which the kernel moves with every setting of the
+    /// clock and with nothing else - not by wall clock minus uptime, which
+    /// also moves with sleep: iOS's uptime stops while the phone sleeps.
     func onClockChanged() {
-        let offset = DeviceInfo.bootOffsetMs
-        let jump = offset - state.lastBootOffsetMs
+        let bootTime = DeviceInfo.bootTimeMs
+        let jump = bootTime - clockBaselineMs
         if abs(jump) > 5_000 { log(IntegrityEvent.clockChanged, .object([("jumpMs", .int(jump))])) }
-        state.lastBootOffsetMs = offset
-        saveState()
+        clockBaselineMs = bootTime
         checkDay()
         scheduleMidnight()
     }

@@ -33,18 +33,15 @@ enum DeviceInfo {
     }
 
     /// Epoch ms of the boot, from `kern.boottime`: constant for one boot,
-    /// unless the wall clock is edited - which is the point.
+    /// unless the wall clock is edited - which is the point. Sleep does not
+    /// move it; wall clock minus `systemUptime` would, since the uptime
+    /// stops while the phone sleeps.
     static var bootTimeMs: Int64 {
         var mib = [CTL_KERN, KERN_BOOTTIME]
         var boot = timeval()
         var size = MemoryLayout<timeval>.stride
         guard sysctl(&mib, 2, &boot, &size, nil, 0) == 0 else { return 0 }
         return Int64(boot.tv_sec) * 1000 + Int64(boot.tv_usec) / 1000
-    }
-
-    /// Wall clock minus uptime: moves only when the clock is set.
-    static var bootOffsetMs: Int64 {
-        DayClock.ms(Date()) - Int64(ProcessInfo.processInfo.systemUptime * 1000)
     }
 
     static func nowMs() -> Int64 { DayClock.ms(Date()) }

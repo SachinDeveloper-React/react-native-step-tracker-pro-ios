@@ -72,7 +72,8 @@ activity-driven scenarios are ported as minute-level tests in
 - Minutes are listed (and judged) only while `fraudDetection.enabled`, as on
   Android: `minutesStatus: 'disabled'` returns `[]`. Turning detection on
   mid-day judges the whole day, since the pedometer's history is there.
-- Events logged: `clock_changed` (`jumpMs`, from wall clock minus uptime),
+- Events logged: `clock_changed` (`jumpMs`: how far the clock was set while
+  the app ran, measured by `kern.boottime`, which sleep does not move),
   `timezone_changed`, `reset_today`, `count_from`, `history_cleared`,
   `config_changed`, `sensor_changed` (the Apple Health fallback),
   `charging_started` / `charging_stopped`, `activity_changed`, `motion_gate`
