@@ -109,6 +109,19 @@ struct MotionFeatures {
     var stepsDuringWindow: Int
 }
 
+/// How the minutes being judged were measured.
+enum MinuteResolution {
+    /// Each minute's steps were counted in that minute: Android's sensor
+    /// events, timed to the second.
+    case exact
+    /// Each minute is its share of a record that covers several - iOS
+    /// history. The iPhone stores steps in records of 6 to 10 minutes, so a
+    /// walk's minutes come back as that record's average: the minute-to-
+    /// minute drift that tells a person from a machine, and the short rests
+    /// that break a walk, are averaged away.
+    case averaged
+}
+
 struct DayEvaluation {
     var flags: [IntegrityFlag]
     var flaggedSteps: Int
@@ -132,7 +145,13 @@ enum FraudDetector {
     static let swingMinPeakRatio = 0.42
     private static let minute = MinuteAttribution.minuteMs
 
-    static func evaluate(_ minutes: [MinuteSample], windows: [MotionFeatures], rules: IntegrityRules, clock: DayClock) -> DayEvaluation {
+    /// @param resolution `.averaged` on iOS: the two rules that read the
+    ///   minute-to-minute shape of a walk - `steady_cadence` and
+    ///   `continuous` - become weak, evidence for a server rather than
+    ///   suspect steps, since averaged minutes make every steady walker
+    ///   look like a machine and erase the pauses that end a run.
+    static func evaluate(_ minutes: [MinuteSample], windows: [MotionFeatures], rules: IntegrityRules, clock: DayClock,
+                         resolution: MinuteResolution = .exact) -> DayEvaluation {
         let sorted = minutes.filter { $0.totalSteps > 0 }.sorted { $0.minuteStart < $1.minuteStart }
         var byMinute: [Int64: MinuteSample] = [:]
         for m in sorted { byMinute[m.minuteStart] = m }
@@ -141,8 +160,8 @@ enum FraudDetector {
         var strongVehicle = Set<Int64>()
 
         cadence(sorted, rules, &flags, &whole)
-        steady(sorted, rules, &flags, &whole)
-        continuous(sorted, rules, &flags, &whole)
+        steady(sorted, rules, resolution, &flags, &whole)
+        continuous(sorted, rules, resolution, &flags, &whole)
         if rules.flagWhileCharging {
             for run in tagged(sorted, { $0.chargingSteps }) {
                 flags.append(tagFlag(IntegrityFlag.charging, .strong, run) { $0.chargingSteps })
@@ -217,7 +236,9 @@ enum FraudDetector {
         }
     }
 
-    private static func steady(_ sorted: [MinuteSample], _ rules: IntegrityRules, _ flags: inout [IntegrityFlag], _ whole: inout Set<Int64>) {
+    private static func steady(_ sorted: [MinuteSample], _ rules: IntegrityRules, _ resolution: MinuteResolution,
+                               _ flags: inout [IntegrityFlag], _ whole: inout Set<Int64>) {
+        let exact = resolution == .exact
         guard rules.steadyCadenceMinutes > 0 else { return }
         for run in activeRuns(sorted) {
             var start = 0
@@ -226,33 +247,38 @@ enum FraudDetector {
                 if !breaks { continue }
                 let span = Array(run[start..<i])
                 if span.count >= rules.steadyCadenceMinutes {
-                    span.forEach { whole.insert($0.minuteStart) }
+                    if exact { span.forEach { whole.insert($0.minuteStart) } }
                     let sum = span.reduce(0) { $0 + $1.steps }
+                    var evidence: [(String, JSON)] = [("minutes", .int(span.count)),
+                                                      ("meanSpm", .double(round1(Double(sum) / Double(span.count)))),
+                                                      ("minSpm", .int(span.map(\.steps).min() ?? 0)),
+                                                      ("maxSpm", .int(span.map(\.steps).max() ?? 0))]
+                    if !exact { evidence.append(("minuteData", .string("averaged"))) }
                     flags.append(IntegrityFlag(
-                        type: IntegrityFlag.steadyCadence, severity: .strong,
+                        type: IntegrityFlag.steadyCadence, severity: exact ? .strong : .weak,
                         from: span.first!.minuteStart, to: span.last!.minuteStart + minute, steps: sum,
-                        evidence: [("minutes", .int(span.count)),
-                                   ("meanSpm", .double(round1(Double(sum) / Double(span.count)))),
-                                   ("minSpm", .int(span.map(\.steps).min() ?? 0)),
-                                   ("maxSpm", .int(span.map(\.steps).max() ?? 0))]))
+                        evidence: evidence))
                 }
                 start = i
             }
         }
     }
 
-    private static func continuous(_ sorted: [MinuteSample], _ rules: IntegrityRules, _ flags: inout [IntegrityFlag], _ whole: inout Set<Int64>) {
+    private static func continuous(_ sorted: [MinuteSample], _ rules: IntegrityRules, _ resolution: MinuteResolution,
+                                   _ flags: inout [IntegrityFlag], _ whole: inout Set<Int64>) {
         let limit = rules.maxContinuousMinutes
         guard limit > 0 else { return }
+        let exact = resolution == .exact
         for run in activeRuns(sorted) where run.count > limit {
             let excess = Array(run[limit...])
-            excess.forEach { whole.insert($0.minuteStart) }
+            if exact { excess.forEach { whole.insert($0.minuteStart) } }
+            var evidence: [(String, JSON)] = [("runMinutes", .int(run.count)), ("limitMinutes", .int(limit)),
+                                              ("runStartedAt", .int(run.first!.minuteStart))]
+            if !exact { evidence.append(("minuteData", .string("averaged"))) }
             flags.append(IntegrityFlag(
-                type: IntegrityFlag.continuous, severity: .strong,
+                type: IntegrityFlag.continuous, severity: exact ? .strong : .weak,
                 from: excess.first!.minuteStart, to: excess.last!.minuteStart + minute,
-                steps: excess.reduce(0) { $0 + $1.steps },
-                evidence: [("runMinutes", .int(run.count)), ("limitMinutes", .int(limit)),
-                           ("runStartedAt", .int(run.first!.minuteStart))]))
+                steps: excess.reduce(0) { $0 + $1.steps }, evidence: evidence))
         }
     }
 

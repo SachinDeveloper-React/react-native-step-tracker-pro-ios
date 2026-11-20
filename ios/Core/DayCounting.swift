@@ -170,6 +170,12 @@ struct DayCount: Equatable {
 }
 
 enum DayCounting {
+    /// More steps than this in one minute were not taken in that minute -
+    /// nothing the motion coprocessor counts goes that fast. Such a minute
+    /// is a lump the pedometer could not place: parked untimed, as Android
+    /// parks a lump, so no cadence rule judges it.
+    static let lumpSteps = 500
+
     /// Splits [target] in proportion to [weights], largest remainder first,
     /// so the parts always add back to it. Nil when there is nothing to
     /// weigh by.
@@ -251,7 +257,8 @@ enum DayCounting {
                     continue
                 }
                 for (bucket, steps) in zip(hour.minutes, minuteTotals) where steps > 0 {
-                    add(DayClock.minuteOf(bucket.startMs), timed: steps, untimed: 0)
+                    let lump = steps > lumpSteps
+                    add(DayClock.minuteOf(bucket.startMs), timed: lump ? 0 : steps, untimed: lump ? steps : 0)
                 }
             }
         }
