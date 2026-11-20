@@ -20,3 +20,8 @@ here before a release.
 | 10 | Simulator | Run on a simulator | No crash; `attestDevice()` gives `attested: false`, `appAttest: null`; `requestIntegrityToken()` rejects `E_INTEGRITY_UNAVAILABLE` | Pass (iOS 26.5 simulator, RN 0.87.1) |
 | 11 | Health grant inference | Deny steps on Apple Health's sheet on a phone with steps this week | `stepsGranted: false`, `shouldOpenSettings: true` | |
 | 12 | Midnight | Leave the app open across midnight | `dayChanged` with the closed day's steps; yesterday final and unchanged afterwards | |
+| 13 | Minute resolution | After a 30-minute walk, read today's minutes (`getStepMinutes`) | Runs of near-equal minutes up to ~10 long, as the research predicts; no minute over 500. Note the record lengths you see | |
+| 14 | Watch morning, phone evening | Walk with only the Watch, later with only the phone | `getTodaySteps().steps` within 2% of the Health app's total; `stepSource.merged` true | |
+| 15 | Treadmill | 30+ minutes at a fixed belt speed, `fraudDetection.mode: 'exclude'` | No steps taken out; any `steady_cadence` flag is weak with `minuteData: 'averaged'` | |
+| 16 | Background delivery | Leave the app in the background (do not swipe it away: iOS may not wake an app the user force-quit), walk an hour with Apple Health access | The day updates without opening the app (check `computedAt` / events on the next launch) | |
+| 17 | Limited history (iOS 27) | Allow Apple Health "recent data only" | `historyReadGranted: false`; days before the window are not read | |

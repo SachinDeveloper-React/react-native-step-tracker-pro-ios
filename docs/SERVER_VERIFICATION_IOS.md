@@ -119,7 +119,16 @@ Then score the day as you do for Android. What to expect from iOS values:
 
 - `recoveredSteps` is always 0 and `sensor` is `'step_counter'`.
 - `minutes` (with `minutesStatus: 'enabled'`) sum exactly to
-  `deviceSteps - gatedSteps`.
+  `deviceSteps - gatedSteps`, but each is an **average**: the iPhone stores
+  steps in records of 6-10 minutes. Count active minutes knowing a short
+  walk inside a record is spread across it.
+- `integrity.flags` of type `steady_cadence` and `continuous` are **weak** on
+  iOS, with `evidence.minuteData: 'averaged'`: averaged minutes make steady
+  walkers look like machines and erase short rests. Weigh them as evidence,
+  not as proof. `cadence` and `daily_volume` are strong as on Android.
+- `resolved` under `auto` may merge this phone and a worn watch hour by hour
+  (`merged: true`, the larger of the two in each hour). `sources` keeps each
+  one's own figures and `hourlySteps` for your own scoring.
 - `motionWindows` is always `[]` with `motionWindowsStatus: 'unsupported'`.
 - `sources` are Apple Health's: `packageName` is a bundle id; this iPhone is
   `kind: 'phone'` with `isPlatform: true`, an Apple Watch `kind: 'watch'` with

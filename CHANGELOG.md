@@ -4,10 +4,42 @@ All notable changes to this project are documented here. The format is based
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.0.2] - 2026-11-18
+## [1.1.0] - 2026-11-18
+
+From research into how iOS actually records steps - Apple's documentation
+and what others measured - and how reward apps handle it. The findings, with
+sources, and the decision each led to are in
+[docs/RESEARCH.md](docs/RESEARCH.md).
+
+### Changed
+
+- **`steady_cadence` and `continuous` are weak flags on iOS**, with
+  `evidence.minuteData: 'averaged'`. The iPhone keeps step history in
+  records of 6-10 minutes, so each minute is an average: a steady treadmill
+  walk read as a swing gadget, and a hike whose short rests were averaged
+  away ran past the continuous limit - both strong, both taking real steps
+  out under `mode: 'exclude'`. They stay in `flags` as evidence; `cadence`,
+  `charging`, `in_vehicle` and `daily_volume` stay strong.
+- **`auto` merges this phone with a worn watch, hour by hour.** A morning
+  walked with only the watch and an evening with only the phone each count -
+  the larger of the two in each hour, never the sum - so the number matches
+  the Health app instead of keeping one of them. A pin and the exact
+  policies are unchanged; untrusted apps and manual entries never ride along.
+- **A day settles two hours after midnight**, not ten minutes: the record
+  that ends a day can land late, and its last walk was lost.
 
 ### Fixed
 
+- **Apple Health background delivery could stop.** HealthKit hands a
+  background launch's update to the observer queries that exist as launch
+  finishes, and stops waking an app that misses three. They were registered
+  a moment later on the engine's queue; now synchronously, on the main
+  thread, from the settings the previous run kept.
+- **The ten-second answer to a background delivery waited behind the work
+  it was meant to bound.** It was scheduled on the same serial queue; it now
+  has its own timer.
+- A minute of more than 500 steps - a lump the pedometer could not place -
+  is kept untimed rather than judged as a cadence.
 - **A day left half-counted when it aged out of the pedometer's week kept
   the half.** A day last computed while it was still open - the app used at
   6 pm, then not opened, and not woken by Apple Health, for over a week -
@@ -18,13 +50,29 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   past the pedometer's week was stored as 0 and never asked again, even
   after the user allowed Apple Health. A zero or a failed read now never
   settles a day.
+- **Two iPhones on one Apple Account were both "This iPhone"**, and a day
+  rebuilt from Apple Health summed both - a walk both phones carried counted
+  twice. This phone's source is now learned by matching the pedometer, the
+  other is called "iPhone", and a rebuilt day uses one iPhone only.
+- **An update could have reset everything stored.** A stored file missing a
+  field a new version added failed to decode, and the package started over:
+  tracking state, spans, countFrom and the key's record gone, stored days
+  lost. Every field now decodes leniently.
 - The example app's launch check no longer starts, stops or resets
   tracking: on a phone being tested it changed the count being measured.
+
+### Added
+
+- iOS 27's limited Apple Health history: `historyReadGranted` is false when
+  the user allowed only a recent window, and nothing before it is read.
+- `docs/RESEARCH.md`, and a scenario test suite that walks real days -
+  treadmill, hike, bus ride, watch and phone, aged-out days - through the
+  whole pipeline with the iPhone's averaged records modelled.
 
 ## [1.0.1] - 2026-11-18
 
 The same code as 1.0.0. Its snapshots report `libraryVersion: '1.0.0'`:
-`npm version` moved package.json alone. From 1.0.2 it also writes
+`npm version` moved package.json alone. From 1.1.0 it also writes
 `ios/Core/LibraryVersion.swift`, and `npm publish` refuses a mismatch.
 
 ## [1.0.0] - 2026-11-18
@@ -69,6 +117,6 @@ counts steps on an iPhone. What differs from Android is in
   [docs/SERVER_VERIFICATION_IOS.md](docs/SERVER_VERIFICATION_IOS.md).
 - An example app.
 
-[1.0.2]: https://github.com/SachinDeveloper-React/react-native-step-tracker-pro-ios/releases/tag/v1.0.2
+[1.1.0]: https://github.com/SachinDeveloper-React/react-native-step-tracker-pro-ios/releases/tag/v1.1.0
 [1.0.1]: https://github.com/SachinDeveloper-React/react-native-step-tracker-pro-ios/releases/tag/v1.0.1
 [1.0.0]: https://github.com/SachinDeveloper-React/react-native-step-tracker-pro-ios/releases/tag/v1.0.0

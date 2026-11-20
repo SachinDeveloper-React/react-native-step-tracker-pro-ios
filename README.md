@@ -119,7 +119,10 @@ Node reference implementation in `scripts/app-attest.mjs` and
 - **Minutes** come from CMPedometer history, queried by hour and then by
   minute for hours with steps, and fitted so that
   `sum(minutes) == deviceSteps - gatedSteps` always holds - the check a server
-  makes. CMPedometer remembers 7 days; each day is kept on the device the
+  makes. iOS keeps step history in records of 6-10 minutes, so each minute is
+  an average: the two integrity rules that read the minute-to-minute shape
+  of a walk (`steady_cadence`, `continuous`) are evidence, not suspect
+  steps, on iOS. Why, with sources: [docs/RESEARCH.md](docs/RESEARCH.md). CMPedometer remembers 7 days; each day is kept on the device the
   first time it is computed after it closes. An older day never computed
   falls back to this iPhone's own samples in Apple Health.
 - **The motion gate** holds steps taken in minutes CMMotionActivity reports
@@ -129,7 +132,10 @@ Node reference implementation in `scripts/app-attest.mjs` and
 - **Apple Health sources** are read per source (bundle id): this iPhone
   (`kind: 'phone'`, `isPlatform`), an Apple Watch (`kind: 'watch'`, trusted),
   and every other app, with manual entries counted apart. The resolver is
-  Android's, unchanged.
+  Android's, unchanged - and under `auto` the phone and a worn watch are also
+  merged hour by hour (the larger of the two in each hour, never the sum), so
+  a morning with only the watch and an evening with only the phone both
+  count, as in the Health app.
 - **Calories** always come from the package's step formula, never from Apple
   Health's energy, so the same walk reads the same on both platforms.
 

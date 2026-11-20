@@ -16,8 +16,9 @@ produce a value, it returns a neutral one rather than inventing data.
 | `setCountFrom(at)` with `at` earlier today | Today starts over at the call (it cannot tell which counted steps came before `at`); `count_from` logs `restartedToday: true` | Counts exactly from `at`; today is never restarted; `restartedToday: false` | The pedometer timestamps every step. |
 | `resetToday()` | Zeroes today's counter | Today counts from the call on | Same result; the pedometer's own total cannot be zeroed, so the reset is a floor. |
 | `clearHistory()` | Deletes every stored day | Deletes every stored day before today, and no day before today is computed again | Otherwise the pedometer's week of history would bring cleared days back. |
-| Minutes (`StepMinute`) | Live sensor deltas placed on minutes | CMPedometer queried per hour, then per minute for hours with steps, fitted to the day's single query by largest remainder | So `sum(minutes) == deviceSteps - gatedSteps` holds by construction. See below. |
-| `untimedSteps` | Lumps whose timing is unknown | `0`, except an hour the pedometer counts steps in but cannot place in any minute: those are parked untimed at its first minute | The one case where timing is truly unknown. |
+| Minutes (`StepMinute`) | Live sensor deltas placed on minutes | CMPedometer queried per hour, then per minute for hours with steps, fitted to the day's single query by largest remainder. **Each minute is an average**: the iPhone stores steps in records of 6-10 minutes ([RESEARCH.md](RESEARCH.md) §1) | So `sum(minutes) == deviceSteps - gatedSteps` holds by construction. A server computing active minutes should know they are averages over up to ten minutes. |
+| `untimedSteps` | Lumps whose timing is unknown | `0`, except an hour the pedometer counts steps in but cannot place in any minute (parked at its first minute), and a minute of more than 500 steps - a lump nothing walks in a minute | The cases where timing is truly unknown. |
+| When a day stops changing | When it closes | Two hours after midnight: the record that ends a day can land minutes late | A day closed at once lost its last walk. |
 | Days older than 7 | Stored | Kept as computed once settled. A day not settled before it left the pedometer's week (last computed while still open, or never) is rebuilt from this iPhone's own samples in Apple Health (bundle `com.apple.health.*`, product type `iPhone*`, not user-entered) when they hold more steps than were counted - all tags `0`, with an integrity event `sensor_changed` `{ from: 'pedometer', to: 'healthkit' }`. A zero or a failed read never settles a day: Apple Health returns no data for a refused read, so the day is asked again later | CMPedometer and CMMotionActivity keep 7 days. |
 | `sensor` / `source` | `step_counter`, `step_detector`, `accelerometer` | `step_counter` (`none` without a pedometer, e.g. the simulator) | |
 | Live `stepsChanged` | Every sensor event | Live pedometer updates while the app is in the foreground and tracking; after every background recomputation | iOS gives no live updates in the background. |
@@ -58,6 +59,14 @@ activity-driven scenarios are ported as minute-level tests in
 - Rules, thresholds, `suspectSteps` and `mode: 'flag' | 'exclude'` are
   Android's, ported with its test vectors. `shake` and `swing` never fire:
   they need motion windows.
+- **`steady_cadence` and `continuous` are weak on iOS**, with
+  `evidence.minuteData: 'averaged'`. Both read the minute-to-minute shape of
+  a walk, which iOS history does not keep: minutes are averages over 6-10
+  minute records, so a steady treadmill walk looks like a swing gadget, and
+  rests shorter than a record vanish from a long hike. Judged as exact,
+  they took real walkers' steps out under `mode: 'exclude'`. They stay in
+  `flags` as evidence for a server; `cadence`, `charging`, `in_vehicle`
+  (three minutes and more) and `daily_volume` stay strong.
 - Minutes are listed (and judged) only while `fraudDetection.enabled`, as on
   Android: `minutesStatus: 'disabled'` returns `[]`. Turning detection on
   mid-day judges the whole day, since the pedometer's history is there.
@@ -78,10 +87,22 @@ activity-driven scenarios are ported as minute-level tests in
 
 ## Apple Health in Health Connect's shapes
 
+**`auto` merges this phone with a worn watch, hour by hour.** Android's
+resolver picks one origin for the day, so a morning walked with only the
+watch and an evening with only the phone loses one of them, and the number
+is lower than the Health app's. On iOS, under `auto` with nothing pinned,
+the resolution also takes, for each local hour, the larger of this phone's
+steps and each trusted wearable's - never their sum - and uses that when it
+is larger. It reports `usedExternal: true`, `merged: true`, the wearable as
+`kind` / `packageName`, `baselineSteps` = what it added to the phone, and a
+derived distance. A pin, `wearable`, `health_connect` and `device` are exact,
+as on Android. Untrusted apps and typed-in entries never ride along.
+
+
 | Topic | iOS |
 |---|---|
 | `StepSource.packageName` | The source's bundle id |
-| This iPhone | `kind: 'phone'`, `isPlatform: true`, `appName: 'This iPhone'` |
+| This iPhone | `kind: 'phone'`, `isPlatform: true`, `appName: 'This iPhone'`. Another iPhone on the same Apple Account (it syncs through iCloud) is `appName: 'iPhone'`: which source is this phone is learned once, by matching Apple Health's iPhone sources against the pedometer's own count. Never a wearable, so never merged; the old-day fallback uses one iPhone's samples only, never two summed |
 | Apple Watch | `kind: 'watch'`; `isWearable`, `trustedWearable` (under both trust rules) and `isPlatform` all true; `appName: 'Apple Watch'` |
 | Other apps | `kind` from the samples' `HKDevice` (model or name containing watch, ring, band/tracker, strap/chest, phone), else the catalog, else `'app'` |
 | Device names | Never sent: Apple's own sources are named "This iPhone" / "Apple Watch", not the user's device name |
@@ -117,6 +138,9 @@ then add it to `IOSCatalog.wearableBundleIds` (or have apps pass it in
   `HKQuantityTypeIdentifierDistanceWalkingRunning`.
 - `'totalCalories'` in `healthConnectReadTypes` is ignored: never requested,
   never in `grantedReadTypes`, and not part of `canRead` / `granted`.
+- `historyReadGranted` is false when the user allowed only a recent window of
+  history (iOS 27+, `getEarliestAuthorizedSampleDate`), and nothing before
+  that window is read.
 - `backgroundReadGranted`, `backgroundReadAvailable`, `historyReadGranted`,
   `historyReadAvailable` are true once steps are readable: iOS has no
   separate grant for them.
@@ -212,7 +236,13 @@ SHA-256 of the SubjectPublicKeyInfo.
   for steps) are registered from the module itself at the end of every launch,
   once Apple Health's sheet has been answered. A wake recomputes today and the
   open days, keeps them, emits events to any running JavaScript, and calls the
-  completion handler within 20 seconds whatever happens.
+  completion handler within 10 seconds whatever happens, on its own timer.
+  The observers are registered synchronously on the main thread as launch
+  finishes, from the settings the previous run kept: HealthKit hands a
+  background launch's update to the observers that exist by then, and stops
+  waking an app that misses three. Wakes are at most hourly, and iOS may not
+  wake an app the user swiped away until it is opened again - tell users not
+  to force-quit it, as Sweatcoin does.
 - Locked: Apple Health cannot be read. Displayed numbers use the sources last
   read, with the read reported as `'failed'`; signed evidence carries no
   sources and `sourcesStatus: 'failed'`. Everything is read again on
